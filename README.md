@@ -17,6 +17,16 @@ threestudio is a unified framework for 3D content creation from text prompts, si
 | <a href="https://dreamfusion3d.github.io/">DreamFusion</a> | <a href="https://research.nvidia.com/labs/dir/magic3d/">Magic3D</a> | <a href="https://pals.ttic.edu/p/score-jacobian-chaining">SJC</a> | <a href="https://github.com/eladrich/latent-nerf">Latent-NeRF</a> | <a href="https://fantasia3d.github.io/">Fantasia3D</a> |
 </b></p>
 
+<p align="center">
+    Did not find what you want? Submit a feature request or upvote others' requests <a href="https://github.com/threestudio-project/threestudio/discussions/46">here</a>!
+</p>
+
+## News
+
+- 05/11/2023: We now support exporting textured meshes! See [here](https://github.com/threestudio-project/threestudio#export-meshes) for instructions.
+
+![export-blender](https://github.com/threestudio-project/threestudio/assets/19284678/ccae2820-e702-484c-a43f-81678a365427)
+
 ## Installation
 
 The following steps have been tested on Ubuntu20.04.
@@ -51,7 +61,7 @@ pip install ninja
 pip install -r requirements.txt
 ```
 
-- (Optional, Recommended) The best-performing models in threestudio uses the newly-released T2I model [DeepFloyd IF](https://github.com/deep-floyd/IF) which currently requires signing a license agreement. If you would like use these models, you need to [accept the license on the model card of DeepFloyd IF](https://huggingface.co/DeepFloyd/IF-I-XL-v1.0), and login in the huggingface hub in terminal by `huggingface-cli login`.
+- (Optional, Recommended) The best-performing models in threestudio uses the newly-released T2I model [DeepFloyd IF](https://github.com/deep-floyd/IF) which currently requires signing a license agreement. If you would like use these models, you need to [accept the license on the model card of DeepFloyd IF](https://huggingface.co/DeepFloyd/IF-I-XL-v1.0), and login in the Hugging Face hub in terminal by `huggingface-cli login`.
 
 - For contributors, see [here](https://github.com/threestudio-project/threestudio#contributing-to-threestudio).
 
@@ -59,7 +69,7 @@ pip install -r requirements.txt
 
 Here we show some basic usage of threestudio. First let's train a DreamFusion model to create a classic pancake bunny.
 
-**If you are experiencing unstable connections with HuggingFace, we suggest you either (1) setting environment variable `TRANSFORMERS_OFFLINE=1 DIFFUSERS_OFFLINE=1` before your running command after all needed files have been fetched on the first run, to prevent from connecting to HuggingFace each time you run, or (2) downloading the guidance model you used to a local folder following [here](https://huggingface.co/docs/huggingface_hub/v0.14.1/guides/download#download-an-entire-repository) and [here](https://huggingface.co/docs/huggingface_hub/v0.14.1/guides/download#download-files-to-local-folder), and set `pretrained_model_name_or_path` of the guidance and the prompt processor to the local path.**
+**If you are experiencing unstable connections with Hugging Face, we suggest you either (1) setting environment variable `TRANSFORMERS_OFFLINE=1 DIFFUSERS_OFFLINE=1` before your running command after all needed files have been fetched on the first run, to prevent from connecting to Hugging Face each time you run, or (2) downloading the guidance model you used to a local folder following [here](https://huggingface.co/docs/huggingface_hub/v0.14.1/guides/download#download-an-entire-repository) and [here](https://huggingface.co/docs/huggingface_hub/v0.14.1/guides/download#download-files-to-local-folder), and set `pretrained_model_name_or_path` of the guidance and the prompt processor to the local path.**
 
 ```sh
 # if you have agreed the license of DeepFloyd IF and have >20GB VRAM
@@ -100,6 +110,21 @@ python launch.py --config path/to/trial/dir/configs/parsed.yaml --test --gpu 0 r
 # which will continue using the same trial directory
 # if you want to save to a new trial directory, replace parsed.yaml with raw.yaml in the command
 ```
+
+### Export Meshes
+
+To export the scene to texture meshes, use the `--export` option. We currently support exporting to obj+mtl, or obj with vertex colors.
+
+```sh
+# this uses default mesh-exporter configurations which exports obj+mtl
+python launch.py --config path/to/trial/dir/configs/parsed.yaml --export --gpu 0 resume=path/to/trial/configs/last.ckpt system.exporter_type=mesh-exporter
+# specify system.exporter.fmt=obj to get obj with vertex colors
+python launch.py --config path/to/trial/dir/configs/parsed.yaml --export --gpu 0 resume=path/to/trial/configs/last.ckpt system.exporter_type=mesh-exporter system.exporter.fmt=obj
+# use marching cubes of higher resolutions to get more detailed models
+python launch.py --config configs/magic3d-refine-sd.yaml --train --gpu 0 system.prompt_processor.prompt="a delicious hamburger" system.from_coarse=path/to/coarse/stage/trial/ckpts/last.ckpt system.geometry.isosurface_method=mc system.geometry.isosurface_resolution=256
+```
+
+For all the options you can specify when exporting, see [the documentation](https://github.com/threestudio-project/threestudio/blob/main/DOCUMENTATION.md#exporters).
 
 See [here](https://github.com/threestudio-project/threestudio#supported-models) for example running commands of all our supported models. Please refer to [here](https://github.com/threestudio-project/threestudio#tips-on-improving-quality) for tips on getting higher-quality results, and [here](https://github.com/threestudio-project/threestudio#vram-optimization) for reducing VRAM usage.
 
@@ -177,7 +202,7 @@ python launch.py --config configs/magic3d-refine-sd.yaml --train --gpu 0 system.
 
 **Tips**
 
-- For the caorse stage, DeepFloyd IF performs **way better than** StableDiffusion.
+- For the coarse stage, DeepFloyd IF performs **way better than** StableDiffusion.
 - Magic3D uses a neural network to predict the surface normal, which may not resemble the true geometric normal, so it's common to see that your object becomes extremely dark after `system.material.ambient_only_steps`.
 - Try increasing/decreasing `system.loss.lambda_sparsity` if your scene is stuffed with floaters/becoming empty.
 - Try replacing the background to random colors with a probability 0.5 by setting `system.background.random_aug=true` if you find the model incorrectly treats the background as part of the object.
