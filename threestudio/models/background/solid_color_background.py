@@ -16,7 +16,7 @@ class SolidColorBackground(BaseBackground):
         n_output_dims: int = 3
         color: Tuple = (1.0, 1.0, 1.0)
         learned: bool = False
-
+        random_aug: bool = False
     cfg: Config
 
     def configure(self) -> None:

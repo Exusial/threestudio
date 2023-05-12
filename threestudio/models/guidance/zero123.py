@@ -5,6 +5,7 @@ from omegaconf import OmegaConf
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from diffusers import DDIMScheduler
 
 import threestudio
 from threestudio.utils.base import BaseObject
@@ -49,7 +50,7 @@ class Zero123Guidance(BaseObject):
         grad_clip: Optional[
             Any
         ] = None  # field(default_factory=lambda: [0, 2.0, 8.0, 1000])
-        half_precision_weights: bool = True
+        half_precision_weights: bool = False
 
         min_step_percent: float = 0.02
         max_step_percent: float = 0.98
@@ -75,7 +76,7 @@ class Zero123Guidance(BaseObject):
         for p in self.models['turncam'].parameters():
             p.requires_grad_(False)
 
-        self.num_train_timesteps = self.scheduler.config.num_train_timesteps
+        self.num_train_timesteps = self.cfg.num_train_timesteps
         self.min_step = int(self.num_train_timesteps * self.cfg.min_step_percent)
         self.max_step = int(self.num_train_timesteps * self.cfg.max_step_percent)
 
@@ -85,8 +86,24 @@ class Zero123Guidance(BaseObject):
 
         self.grad_clip_val: Optional[float] = None
 
+        # self.sampler = DDIMSampler(self.models['turncam'])
+        # self.sampler.make_schedule(self.max_step)
+        self.scheduler = DDIMScheduler(
+            self.num_train_timesteps,
+            self.min_step,
+            self.max_step,
+            beta_schedule='scaled_linear',
+            clip_sample=False,
+            set_alpha_to_one=False,
+            steps_offset=1,
+        )
+        self.alphas = self.scheduler.alphas_cumprod.to(self.device)
         threestudio.info(f"Loaded Zero-123!")
 
+    @torch.cuda.amp.autocast(enabled=False)
+    def get_condition(self, cond_rgb):
+        return self.models["turncam"].get_learned_conditioning(cond_rgb)
+    
     @torch.cuda.amp.autocast(enabled=False)
     def forward_unet(
         self,
@@ -104,7 +121,7 @@ class Zero123Guidance(BaseObject):
     def __call__(
         self,
         rgb: Float[Tensor, "B H W C"],
-        camera: Float[Tensor, "B 3"],
+        camera,
         cond_rgb: Float[Tensor, "1 C H W"],
         cond_camera: Float[Tensor, "1 3"]
     ):
@@ -113,31 +130,32 @@ class Zero123Guidance(BaseObject):
         rgb_BCHW = rgb.permute(0, 3, 1, 2)
         # cond_BCHW = cond_rgb.permute(0, 3, 1, 2)
         # assert rgb_as_latents == False, f"No latent space in {self.__class__.__name__}"
-        rgb_BCHW = rgb_BCHW * 2.0 - 1.0  # scale to [-1, 1] to match the diffusion range
+        rgb_BCHW = rgb_BCHW  # scale to [-1, 1] to match the diffusion range
         latents = F.interpolate(
-            rgb_BCHW, (64, 64), mode="bilinear", align_corners=False
-        )
-
+            rgb_BCHW, (32, 32), mode="bilinear", align_corners=False
+        ) * 2.0 - 1.0
         # timestep ~ U(0.02, 0.98) to avoid very high/low noise level
-        model = self.model["turncam"]
-        c = model.get_learned_conditioning(cond_rgb)
-        x, y, z = camera - cond_camera
-        T = torch.tensor([x, math.sin(y), math.cos(y), z])
+        model = self.models["turncam"]
+        cond_rgb, cond_camera = cond_rgb.to(self.device), cond_camera.to(self.device)
+        x, y, z = camera[0].to(self.device) - cond_camera[None, 0], camera[1].to(self.device) - cond_camera[None, 1], camera[2].to(self.device) - cond_camera[None, 2]
+        T = torch.cat([x, torch.sin(y), torch.cos(y), z], dim=-1)[None,...]
+        c = self.get_condition(cond_rgb)
         c = torch.cat([c, T], dim=-1)
         c = model.cc_projection(c)
         cond = {}
         cond['c_crossattn'] = [c]
         c_concat = model.encode_first_stage((cond_rgb.to(self.device))).mode().detach()
-        cond['c_concat'] = [model.encode_first_stage((cond_rgb.to(self.device))).mode().detach()]
-        if scale != 1.0:
+        cond['c_concat'] = [c_concat]
+        h, w = cond_rgb.shape[2:]
+        if self.cfg.guidance_scale != 1.0:
             uc = {}
-            uc['c_concat'] = [torch.zeros(n_samples, 4, h // 8, w // 8).to(c.device)]
+            uc['c_concat'] = [torch.zeros(1, 4, h // 8, w // 8).to(c.device)]
             uc['c_crossattn'] = [torch.zeros_like(c).to(c.device)]
+
         else:
             uc = None
         
-        sampler = DDIMSampler(models['turncam'])
-        sampler.make_schedule(self.max_step)
+
         # shape = [4, h // 8, w // 8]
         # samples_ddim, _ = sampler.sample(S=ddim_steps,
         #                                     conditioning=cond,
@@ -165,9 +183,16 @@ class Zero123Guidance(BaseObject):
         with torch.no_grad():
             # add noise
             noise = torch.randn_like(latents)  # TODO: use torch generator
-            latents_noisy = sampler.q_sample(x, t, noise)
+            latents_noisy = self.scheduler.add_noise(latents, noise, t)
+            # latents_noisy = self.sampler.q_sample(latents, t, noise)
             # pred noise
-            noise_pred = sampler.get_sds_loss(latents_noisy, cond, t, self.cfg.guidance_scale)
+            cond["c_crossattn"] = [torch.cat(uc["c_crossattn"] + cond['c_crossattn'], 0)]
+            cond["c_concat"] = [torch.cat(uc["c_concat"] + cond['c_concat'], 0)]
+            noise_pred = model.apply_model(torch.cat([latents_noisy]*2), torch.cat([t]*2), cond)
+            noise_pred_uncond, noise_pred_cond = noise_pred.chunk(2)
+            noise_pred = noise_pred_uncond + self.cfg.guidance_scale * (noise_pred_cond - noise_pred_uncond)
+            # noise_preds.append(zero123_w[:, None, None, None] * noise_pred)
+            # noise_pred = self.sampler.get_sds_loss(latents_noisy, cond, t, self.cfg.guidance_scale, unconditional_conditioning=uc)
             # latent_model_input = torch.cat([latents_noisy] * 2, dim=0)
             # noise_pred = self.forward_unet(
             #     latent_model_input,
@@ -208,8 +233,8 @@ class Zero123Guidance(BaseObject):
         grad = w * (noise_pred - noise)
         grad = torch.nan_to_num(grad)
         # clip grad for stable training?
-        if self.grad_clip_val is not None:
-            grad = grad.clamp(-self.grad_clip_val, self.grad_clip_val)
+        # if self.grad_clip_val is not None:
+        #     grad = grad.clamp(-self.grad_clip_val, self.grad_clip_val)
 
         # since we omitted an item in grad, we need to use the custom function to specify the gradient
         loss = SpecifyGradient.apply(latents, grad)

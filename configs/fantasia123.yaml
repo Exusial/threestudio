@@ -41,7 +41,8 @@ system:
     guidance_scale: 100.
     max_step_percent: 0.5
     weighting_strategy: fantasia3d
-
+    half_precision_weights: False
+    
   loss:
     lambda_sds: 1.
 
