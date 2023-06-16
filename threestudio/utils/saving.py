@@ -9,11 +9,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import trimesh
+import wandb
 from matplotlib import cm
 from matplotlib.colors import LinearSegmentedColormap
 from pytorch_lightning.loggers import WandbLogger
 
-import wandb
 from threestudio.models.mesh import Mesh
 from threestudio.utils.typing import *
 
@@ -36,7 +36,7 @@ class SaverMixin:
         elif isinstance(data, np.ndarray):
             return data
         elif isinstance(data, torch.Tensor):
-            return data.cpu().numpy()
+            return data.detach().cpu().numpy()
         elif isinstance(data, list):
             return [self.convert_data(d) for d in data]
         elif isinstance(data, dict):
@@ -54,7 +54,9 @@ class SaverMixin:
 
     def create_loggers(self, cfg_loggers: DictConfig) -> None:
         if "wandb" in cfg_loggers.keys() and cfg_loggers.wandb.enable:
-            self._wandb_logger = WandbLogger(project=cfg_loggers.wandb.project)
+            self._wandb_logger = WandbLogger(
+                project=cfg_loggers.wandb.project, name=cfg_loggers.wandb.name
+            )
 
     def get_loggers(self) -> List:
         if self._wandb_logger:

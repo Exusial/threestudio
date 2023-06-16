@@ -6,6 +6,7 @@ from . import (
     magic3d,
     prolificdreamer,
     sjc,
+    textmesh,
     zero123,
     dreamavatar,
     dreamavatar_sdf
