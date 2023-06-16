@@ -56,7 +56,6 @@ class DreamAvatarSDF(BaseLift3DSystem):
         guidance_out = self.guidance(
             out["comp_rgb"], prompt_utils, **batch, rgb_as_latents=False
         )
-        print("guidance_out?")
         loss = 0.0
 
         for name, value in guidance_out.items():

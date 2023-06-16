@@ -19,7 +19,7 @@ from diffusers.utils.import_utils import is_xformers_available
 import threestudio
 from threestudio.models.prompt_processors.base import PromptProcessorOutput
 from threestudio.utils.base import BaseModule
-from threestudio.systems.base import BaseLift3DSystem
+# from threestudio.systems.base import BaseLift3DSystem
 from threestudio.utils.misc import C, cleanup, parse_version
 from threestudio.utils.typing import *
 
@@ -35,7 +35,7 @@ class ToWeightsDType(nn.Module):
 
 
 @threestudio.register("stable-diffusion-vsd-guidance")
-class StableDiffusionVSDGuidance(BaseLift3DSystem):
+class StableDiffusionVSDGuidance(BaseModule):
     @dataclass
     class Config(BaseModule.Config):
         pretrained_model_name_or_path: str = "stabilityai/stable-diffusion-2-1-base"
