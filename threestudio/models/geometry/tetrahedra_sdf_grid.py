@@ -59,6 +59,7 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
         fix_geometry: bool = False
         smpl_model_dir: str = "/home/penghy/diffusion/avatars/models"
         smpl_out_dir: str = "smpl.obj"
+        n_particles: int = 1
 
     cfg: Config
 
@@ -88,7 +89,7 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
                 "sdf",
                 nn.Parameter(
                     torch.zeros(
-                        (self.isosurface_helper.grid_vertices.shape[0], 1),
+                        (self.cfg.n_particles, self.isosurface_helper.grid_vertices.shape[0], 1),
                         dtype=torch.float32,
                     )
                 ),
@@ -97,7 +98,7 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
                 self.register_parameter(
                     "deformation",
                     nn.Parameter(
-                        torch.zeros_like(self.isosurface_helper.grid_vertices)
+                        torch.zeros(self.cfg.n_particles, self.isosurface_helper.grid_vertices.shape[0], self.isosurface_helper.grid_vertices.shape[1])
                     ),
                 )
             else:
@@ -118,7 +119,8 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
             else:
                 self.deformation = None
         if self.init_sdf is not None:
-            self.sdf = torch.nn.Parameter(self.init_sdf(self.isosurface_helper.grid_vertices)[0])
+            self.sdf_bias = torch.nn.Parameter(self.init_sdf(self.isosurface_helper.grid_vertices)[0].unsqueeze(-1))
+            self.sdf_bias.requires_grad = False
             # self.export_sdf_shape()
             # exit()
         if not self.cfg.geometry_only:
@@ -132,7 +134,7 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
             )
 
         self.mesh: Optional[Mesh] = None
-
+        
     def initialize_shape(self) -> None:
         raise NotImplementedError
 
@@ -146,7 +148,8 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
         # return cached mesh if fix_geometry is True to save computation
         if self.cfg.fix_geometry and self.mesh is not None:
             return self.mesh
-        mesh = self.isosurface_helper(self.sdf, self.deformation)
+        self.particle_index = np.random.randint(self.cfg.n_particles)
+        mesh = self.isosurface_helper(self.sdf[self.particle_index] + self.sdf_bias, self.deformation[self.particle_index])
         mesh.v_pos = scale_tensor(
             mesh.v_pos, self.isosurface_helper.points_range, self.isosurface_bbox
         )

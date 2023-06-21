@@ -190,7 +190,7 @@ class CoarseImplicitVolume(BaseImplicitGeometry):
                 raise AttributeError(f"Unknown normal type {self.cfg.normal_type}")
             if self.cfg.normal_type != "refnerf":
                 output.update({"normal": normal, "shading_normal": normal})
-
+        
         torch.set_grad_enabled(grad_enabled)
         return output
 

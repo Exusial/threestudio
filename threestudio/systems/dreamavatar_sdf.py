@@ -30,6 +30,7 @@ class DreamAvatarSDF(BaseLift3DSystem):
     def configure(self):
         # create geometry, material, background, renderer
         super().configure()
+        self.geometry_guidance = threestudio.find(self.cfg.geometry_type)(self.cfg.geometry_guidance)
         self.guidance = threestudio.find(self.cfg.guidance_type)(self.cfg.guidance)
         self.prompt_processor = threestudio.find(self.cfg.prompt_processor_type)(
             self.cfg.prompt_processor
@@ -37,6 +38,10 @@ class DreamAvatarSDF(BaseLift3DSystem):
         self.prompt_utils = self.prompt_processor()
 
     def forward(self, batch: Dict[str, Any]) -> Dict[str, Any]:
+        if self.cfg.stage == "geometry":
+            render_out = self.renderer(**batch, render_normal=True, render_rgb=False)
+        else:
+            render_out = self.renderer(**batch)
         render_out = self.renderer(**batch)
         return {
             **render_out,
@@ -53,24 +58,39 @@ class DreamAvatarSDF(BaseLift3DSystem):
     def training_step(self, batch, batch_idx):
         out = self(batch)
         prompt_utils = self.prompt_processor()
-        guidance_out = self.guidance(
-            out["comp_rgb"], prompt_utils, **batch, rgb_as_latents=False
-        )
+        if self.cfg.stage == "geometry":
+            guidance_out = self.guidance(
+                out["comp_normal"], prompt_utils, **batch, rgb_as_latents=False
+            )
+        else:
+            guidance_out = self.guidance(
+                out["comp_rgb"], prompt_utils, **batch, rgb_as_latents=False
+            )
         loss = 0.0
-
         for name, value in guidance_out.items():
             self.log(f"train/{name}", value)
             if name.startswith("loss_"):
                 loss += value * self.C(self.cfg.loss[name.replace("loss_", "lambda_")])
-                
-        loss_normal_consistency = out["mesh"].normal_consistency()
-        self.log("train/loss_normal_consistency", loss_normal_consistency)
-        loss += loss_normal_consistency * self.C(
-            self.cfg.loss.lambda_normal_consistency
-        )
+        if self.cfg.stge == "geometry":
+            loss_normal_consistency = out["mesh"].normal_consistency()
+            self.log("train/loss_normal_consistency", loss_normal_consistency)
+            loss += loss_normal_consistency * self.C(
+                self.cfg.loss.lambda_normal_consistency
+            )
 
-        for name, value in self.cfg.loss.items():
-            self.log(f"train_params/{name}", self.C(value))
+            if self.cfg.loss.lambda_regular:
+                sdf = self.geometry.sdf[self.geometry.particle_index] + self.geometry.sdf_bias
+                sdf_edges = sdf[self.geometry.isosurface_helper.all_edges].reshape(-1, 2)
+                edge_masks = torch.sign(sdf_edges[:,0]) != torch.sign(sdf_edges[:,1])
+                sdf_edges = sdf_edges[edge_masks]
+                sdf_diff = torch.nn.functional.binary_cross_entropy_with_logits(sdf_edges[...,0], (sdf_edges[...,1] > 0).float()) + \
+                torch.nn.functional.binary_cross_entropy_with_logits(sdf_edges[...,1], (sdf_edges[...,0] > 0).float())
+                loss += self.C(self.cfg.loss.lambda_regular) * sdf_diff
+
+            for name, value in self.cfg.loss.items():
+                self.log(f"train_params/{name}", self.C(value))
+        else:
+            pass
 
         return {"loss": loss}
 
