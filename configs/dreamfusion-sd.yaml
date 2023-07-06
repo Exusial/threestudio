@@ -15,12 +15,12 @@ data:
   eval_camera_distance: 2.0
   eval_fovy_deg: 70.
 
-system_type: "dreamfusion-system"
+system_type: "dreamavatar-system"
 system:
   geometry_type: "implicit-volume"
   geometry:
     radius: 2.0
-    normal_type: "analytic"
+    normal_type: "refnerf"
 
     # the density initialization proposed in the DreamFusion paper
     # does not work very well

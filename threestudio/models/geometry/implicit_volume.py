@@ -15,6 +15,8 @@ from threestudio.models.networks import get_encoding, get_mlp
 from threestudio.utils.ops import get_activation
 from threestudio.utils.typing import *
 
+import pytorch_volumetric as pv
+from threestudio.utils.smpl_utils import convert_sdf_to_alpha, save_smpl_to_obj
 
 @threestudio.register("implicit-volume")
 class ImplicitVolume(BaseImplicitGeometry):
@@ -52,6 +54,8 @@ class ImplicitVolume(BaseImplicitGeometry):
 
         # automatically determine the threshold
         isosurface_threshold: Union[float, str] = 25.0
+        smpl_model_dir: str = "/home/penghy/diffusion/avatars/models"
+        smpl_out_dir: str = "smpl.obj"
 
     cfg: Config
 
@@ -69,10 +73,14 @@ class ImplicitVolume(BaseImplicitGeometry):
                 self.cfg.n_feature_dims,
                 self.cfg.mlp_network_config,
             )
-        if self.cfg.normal_type == "pred":
+        if self.cfg.normal_type == "pred" or self.cfg.normal_type == "refnerf":
             self.normal_network = get_mlp(
                 self.encoding.n_output_dims, 3, self.cfg.mlp_network_config
             )
+        if self.cfg.density_bias == "smpl":
+            save_smpl_to_obj(self.cfg.smpl_model_dir, out_dir=self.cfg.smpl_out_dir, bbox=self.bbox)
+            obj = pv.MeshObjectFactory(self.cfg.smpl_out_dir)
+            self.sdf = pv.MeshSDF(obj)
 
     def get_activated_density(
         self, points: Float[Tensor, "*N Di"], density: Float[Tensor, "*N 1"]
@@ -95,6 +103,10 @@ class ImplicitVolume(BaseImplicitGeometry):
                     - torch.sqrt((points**2).sum(dim=-1)) / self.cfg.density_blob_std
                 )[..., None]
             )
+        elif self.cfg.density_bias == "smpl":
+            with torch.no_grad():
+                sdf_val, sdf_grad = self.sdf(points)
+            density_bias = convert_sdf_to_alpha(sdf_val).unsqueeze(-1)
         elif isinstance(self.cfg.density_bias, float):
             density_bias = self.cfg.density_bias
         else:
@@ -108,7 +120,7 @@ class ImplicitVolume(BaseImplicitGeometry):
     ) -> Dict[str, Float[Tensor, "..."]]:
         grad_enabled = torch.is_grad_enabled()
 
-        if output_normal and self.cfg.normal_type == "analytic":
+        if output_normal and (self.cfg.normal_type == "analytic" or self.cfg.normal_type == "refnerf"):
             torch.set_grad_enabled(True)
             points.requires_grad_(True)
 
@@ -170,9 +182,20 @@ class ImplicitVolume(BaseImplicitGeometry):
                 normal = F.normalize(normal, dim=-1)
                 if not grad_enabled:
                     normal = normal.detach()
+            elif self.cfg.normal_type == "refnerf":
+                ana_normal = -torch.autograd.grad(
+                    density,
+                    points_unscaled,
+                    grad_outputs=torch.ones_like(density),
+                    create_graph=True,
+                )[0]
+                normal = self.normal_network(enc).view(*points.shape[:-1], 3)
+                pred_normal = F.normalize(normal, dim=-1)
+                output.update({"normal": ana_normal, "shading_normal": pred_normal})
             else:
                 raise AttributeError(f"Unknown normal type {self.cfg.normal_type}")
-            output.update({"normal": normal, "shading_normal": normal})
+            if self.cfg.normal_type != "refnerf":
+                output.update({"normal": normal, "shading_normal": normal})
 
         torch.set_grad_enabled(grad_enabled)
         return output

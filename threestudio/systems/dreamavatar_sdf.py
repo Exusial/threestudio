@@ -25,12 +25,12 @@ class DreamAvatarSDF(BaseLift3DSystem):
 
         latent_steps: int = 1000
         refinement: bool = False
+        stage: str = "geometry"
     cfg: Config
 
     def configure(self):
         # create geometry, material, background, renderer
         super().configure()
-        self.geometry_guidance = threestudio.find(self.cfg.geometry_type)(self.cfg.geometry_guidance)
         self.guidance = threestudio.find(self.cfg.guidance_type)(self.cfg.guidance)
         self.prompt_processor = threestudio.find(self.cfg.prompt_processor_type)(
             self.cfg.prompt_processor
@@ -60,7 +60,7 @@ class DreamAvatarSDF(BaseLift3DSystem):
         prompt_utils = self.prompt_processor()
         if self.cfg.stage == "geometry":
             guidance_out = self.guidance(
-                out["comp_normal"], prompt_utils, **batch, rgb_as_latents=False
+                out["comp_rgb"], prompt_utils, **batch, rgb_as_latents=False
             )
         else:
             guidance_out = self.guidance(
@@ -71,7 +71,7 @@ class DreamAvatarSDF(BaseLift3DSystem):
             self.log(f"train/{name}", value)
             if name.startswith("loss_"):
                 loss += value * self.C(self.cfg.loss[name.replace("loss_", "lambda_")])
-        if self.cfg.stge == "geometry":
+        if self.cfg.stage == "geometry":
             loss_normal_consistency = out["mesh"].normal_consistency()
             self.log("train/loss_normal_consistency", loss_normal_consistency)
             loss += loss_normal_consistency * self.C(

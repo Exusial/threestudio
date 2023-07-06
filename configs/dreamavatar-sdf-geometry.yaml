@@ -1,4 +1,4 @@
-name: "dreamavatar-sdf-vsd"
+name: "dreamavatar-sdf-vsd-geo"
 tag: "${rmspace:${system.prompt_processor.prompt},_}"
 exp_root_dir: "outputs"
 seed: 0
@@ -17,6 +17,7 @@ data:
 
 system_type: "dreamavatar-sdf-system"
 system:
+  stage: geometry
   geometry_type: "tetrahedra-sdf-grid"
   geometry:
     radius: 1.0 # consistent with coarse
@@ -32,7 +33,7 @@ system:
       per_level_scale: 1.4472692374403782 # max resolution 4096
     fix_geometry: false # optimize grid sdf and deformation
     shape_init: smpl
-    smpl_model_dir: /home/phy/diffusion/avatars/models
+    smpl_model_dir: /home/penghy/diffusion/avatars/models
     smpl_out_dir: smpl.obj
     n_particles: 1
   # material_type: "diffuse-with-point-light-material"
@@ -79,14 +80,14 @@ system:
       project: 'threestudio'
 
   loss:
-    lambda_vsd: 1.
+    lambda_sds: 1.
     lambda_lora: 1.
     # lambda_orient: 0.
     # lambda_sparsity: 10.
     # lambda_opaque: [10000, 0.0, 1000.0, 10001]
     # lambda_eikonal: 1000.
     lambda_regular: 0.1
-    lambda_normal_consistency: 5000
+    lambda_normal_consistency: 8000
 
   optimizer:
     name: AdamW
@@ -114,5 +115,3 @@ checkpoint:
   save_last: true # save at each validation time
   save_top_k: -1
   every_n_train_steps: ${trainer.max_steps}
-
-stage: geometry
