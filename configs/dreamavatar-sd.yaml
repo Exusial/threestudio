@@ -17,10 +17,10 @@ data:
 
 system_type: "dreamavatar-system"
 system:
-  geometry_type: "coarse-implicit-volume"
+  geometry_type: "implicit-volume"
   geometry:
     radius: 2.0
-    normal_type: "refnerf"
+    normal_type: "analytic"
 
     # the density initialization proposed in the DreamFusion paper
     # does not work very well
@@ -30,7 +30,7 @@ system:
     # density_blob_std: 0.2
 
     # use Magic3D density initialization instead
-    density_bias: "blob_magic3d"
+    density_bias: "smpl"
     density_activation: softplus
     density_blob_scale: 10.
     density_blob_std: 0.5
