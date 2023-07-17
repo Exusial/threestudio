@@ -178,6 +178,7 @@ pyrightconfig.json
 .vscode/
 .threestudio_cache/
 outputs/
+smplx/
 
 # pretrained model weights
 *.ckpt
