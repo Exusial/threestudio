@@ -33,7 +33,7 @@ system:
       per_level_scale: 1.4472692374403782 # max resolution 4096
     fix_geometry: false # optimize grid sdf and deformation
     shape_init: smpl
-    smpl_model_dir: /home/penghy/diffusion/avatars/models
+    smpl_model_dir: /home/zjp/zjp/threestudio
     smpl_out_dir: smpl.obj
     n_particles: 1
   # material_type: "diffuse-with-point-light-material"

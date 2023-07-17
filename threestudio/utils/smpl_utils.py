@@ -8,7 +8,7 @@ import trimesh
 def convert_sdf_to_alpha(sdf_guide):
     beta = 1e-3
     alpha = 1.0 / beta
-    v = -1. * torch.abs(sdf_guide) * alpha
+    v = -1. * sdf_guide * alpha
     sg = alpha * torch.sigmoid(v)
     soft_guide = torch.log(torch.exp(sg) - 1)
     density_guide = torch.clamp(soft_guide, min=0.0)
@@ -31,6 +31,7 @@ def rotate_y(rad):
 def save_smpl_to_obj(model_folder, out_dir="smpl.obj", model_type='smplx', ext='npz', gender='neutral', 
     num_betas=10, num_expression_coeffs=10, use_face_contour=False, sample_shape=True, sample_expression=True, bbox=None
     ,rotate=None):
+    #print("model_type: ", model_type)
     model = smplx.create(model_folder, model_type=model_type,
                          gender=gender, use_face_contour=use_face_contour,
                          num_betas=num_betas,

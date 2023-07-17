@@ -57,7 +57,7 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
         force_shape_init: bool = False
         geometry_only: bool = False
         fix_geometry: bool = False
-        smpl_model_dir: str = "/home/penghy/diffusion/avatars/models"
+        smpl_model_dir: str = "/home/zjp/zjp/threestudio"
         smpl_out_dir: str = "smpl.obj"
         n_particles: int = 1
 

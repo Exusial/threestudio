@@ -54,8 +54,9 @@ class DreamAvatar(BaseLift3DSystem):
                 "Normal is required for normal correlation loss, no normal is found in the output."
             )
         loss_normal = torch.mean((out["normal"] - out["shading_normal"]) ** 2)
-        lambda_normal = torch.mean((1 - torch.exp(-out["density"]))**2)
-        loss += loss_normal * lambda_normal
+        lambda_normal = torch.mean(torch.sqrt((1 - torch.exp(-out["density"])) ** 2))
+        self.log("train/loss_normal", loss_normal * lambda_normal)
+        loss += loss_normal * lambda_normal * self.cfg.loss.lambda_sparsity
         
         loss_sparsity = (out["opacity"] ** 2 + 0.01).sqrt().mean()
         self.log("train/loss_sparsity", loss_sparsity)

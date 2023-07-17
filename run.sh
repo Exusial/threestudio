@@ -1,0 +1,2 @@
+#python3 launch.py --config configs/dreamavatar-sd.yaml --train --gpu 2 system.prompt_processor.prompt="Captain American Full Body"
+python3 launch.py --config configs/dreamavatar-sd.yaml --train --gpu 0 system.prompt_processor.prompt="Captain American Full Body"

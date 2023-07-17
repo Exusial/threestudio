@@ -54,7 +54,7 @@ class ImplicitVolume(BaseImplicitGeometry):
 
         # automatically determine the threshold
         isosurface_threshold: Union[float, str] = 25.0
-        smpl_model_dir: str = "/home/penghy/diffusion/avatars/models"
+        smpl_model_dir: str = "/home/zjp/zjp/threestudio"
         smpl_out_dir: str = "smpl.obj"
 
     cfg: Config
