@@ -15,14 +15,22 @@ class DreamAvatar(BaseLift3DSystem):
         # only used when refinement=True and from_coarse=True
         geometry_type: str = "coarse-implicit-volume"
         geometry: dict = field(default_factory=dict)
+        use_vsd: int = 1
     cfg: Config
 
     def configure(self):
         # create geometry, material, background, renderer
         super().configure()
-    
+        if self.cfg.use_vsd:
+            self.guidance = threestudio.find(self.cfg.guidance_type)(self.cfg.guidance)
+            self.prompt_processor = threestudio.find(self.cfg.prompt_processor_type)(
+                self.cfg.prompt_processor
+            )
+            self.prompt_utils = self.prompt_processor()
+            # self.renderer.training = True
+
     def forward(self, batch: Dict[str, Any]) -> Dict[str, Any]:
-        render_out = self.renderer(**batch)
+        render_out = self.renderer(**batch, render_normal=True)
         return {
             **render_out,
         }
@@ -30,16 +38,15 @@ class DreamAvatar(BaseLift3DSystem):
     def on_fit_start(self) -> None:
         super().on_fit_start()
         # only used in training
-        self.prompt_processor = threestudio.find(self.cfg.prompt_processor_type)(
-            self.cfg.prompt_processor
-        )
-        self.guidance = threestudio.find(self.cfg.guidance_type)(self.cfg.guidance)
+        # self.prompt_processor = threestudio.find(self.cfg.prompt_processor_type)(
+        #     self.cfg.prompt_processor
+        # )
+        # self.guidance = threestudio.find(self.cfg.guidance_type)(self.cfg.guidance)
 
     def training_step(self, batch, batch_idx):
         out = self(batch)
-        prompt_utils = self.prompt_processor()
         guidance_out = self.guidance(
-            out["comp_rgb"], prompt_utils, **batch, rgb_as_latents=False
+            out["comp_rgb"], self.prompt_utils, **batch, rgb_as_latents=False
         )
 
         loss = 0.0
@@ -48,15 +55,15 @@ class DreamAvatar(BaseLift3DSystem):
             self.log(f"train/{name}", value)
             if name.startswith("loss_"):
                 loss += value * self.C(self.cfg.loss[name.replace("loss_", "lambda_")])
-
-        if "normal" not in out:
-            raise ValueError(
-                "Normal is required for normal correlation loss, no normal is found in the output."
-            )
-        loss_normal = torch.mean((out["normal"] - out["shading_normal"]) ** 2)
-        lambda_normal = torch.mean(torch.sqrt((1 - torch.exp(-out["density"])) ** 2))
-        self.log("train/loss_normal", loss_normal * lambda_normal)
-        loss += loss_normal * lambda_normal * self.cfg.loss.lambda_sparsity
+        if not self.cfg.use_vsd:
+            if "normal" not in out:
+                raise ValueError(
+                    "Normal is required for normal correlation loss, no normal is found in the output."
+                )
+            loss_normal = torch.mean((out["normal"] - out["shading_normal"]) ** 2)
+            lambda_normal = torch.mean(torch.sqrt((1 - torch.exp(-out["density"])) ** 2))
+            self.log("train/loss_normal", loss_normal * lambda_normal)
+            loss += loss_normal * lambda_normal * self.cfg.loss.lambda_sparsity
         
         loss_sparsity = (out["opacity"] ** 2 + 0.01).sqrt().mean()
         self.log("train/loss_sparsity", loss_sparsity)
@@ -66,6 +73,12 @@ class DreamAvatar(BaseLift3DSystem):
         loss_opaque = binary_cross_entropy(opacity_clamped, opacity_clamped)
         self.log("train/loss_opaque", loss_opaque)
         loss += loss_opaque * self.C(self.cfg.loss.lambda_opaque)
+
+        # z variance loss proposed in HiFA: http://arxiv.org/abs/2305.18766
+        # helps reduce floaters and produce solid geometry
+        loss_z_variance = out["z_variance"][out["opacity"] > 0.5].mean()
+        self.log("train/loss_z_variance", loss_z_variance)
+        loss += loss_z_variance * self.C(self.cfg.loss.lambda_z_variance)
 
         for name, value in self.cfg.loss.items():
             self.log(f"train_params/{name}", self.C(value))

@@ -34,7 +34,6 @@ system:
     shape_init: smpl
     smpl_model_dir: /home/phy/diffusion/avatars/models
     smpl_out_dir: smpl.obj
-    n_particles: 1
   # material_type: "diffuse-with-point-light-material"
   # material:
   #   ambient_only_steps: 0

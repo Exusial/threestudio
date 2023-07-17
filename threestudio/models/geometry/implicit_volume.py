@@ -119,7 +119,6 @@ class ImplicitVolume(BaseImplicitGeometry):
         self, points: Float[Tensor, "*N Di"], output_normal: bool = False
     ) -> Dict[str, Float[Tensor, "..."]]:
         grad_enabled = torch.is_grad_enabled()
-
         if output_normal and (self.cfg.normal_type == "analytic" or self.cfg.normal_type == "refnerf"):
             torch.set_grad_enabled(True)
             points.requires_grad_(True)
@@ -144,6 +143,7 @@ class ImplicitVolume(BaseImplicitGeometry):
             output.update({"features": features})
 
         if output_normal:
+            print("gg")
             if self.cfg.normal_type == "finite_difference":
                 # TODO: use raw density
                 eps = self.cfg.finite_difference_normal_eps

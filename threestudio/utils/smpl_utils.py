@@ -43,8 +43,10 @@ def save_smpl_to_obj(model_folder, out_dir="smpl.obj", model_type='smplx', ext='
     if sample_expression:
         expression = torch.randn(
             [1, model.num_expression_coeffs], dtype=torch.float32)
-
-    output = model(betas=betas, expression=expression,
+    a_pose = torch.zeros_like(model.body_pose).reshape(1,-1,3)
+    a_pose[:,12,2] = -0.6
+    a_pose[:,13,2] = 0.6
+    output = model(body_pose=a_pose, betas=betas, expression=expression,
                    return_verts=True)
     vertices = output.vertices.detach().cpu().numpy().squeeze()
     if bbox is None:
