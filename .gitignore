@@ -187,3 +187,4 @@ smplx/
 wandb/
 
 *.obj
+*.mp4
