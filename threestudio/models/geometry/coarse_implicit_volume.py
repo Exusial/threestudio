@@ -52,6 +52,7 @@ class CoarseImplicitVolume(BaseImplicitGeometry):
         isosurface_threshold: Union[float, str] = 25.0
         smpl_model_dir: str = "/home/zjp/zjp/threestudio"
         smpl_out_dir: str = "smpl.obj"
+        smpl_gender: str = "neutral"
 
     cfg: Config
 
@@ -73,7 +74,8 @@ class CoarseImplicitVolume(BaseImplicitGeometry):
                 self.encoding.n_output_dims, 3, self.cfg.mlp_network_config
             )
         if self.cfg.density_bias == "smpl":
-            save_smpl_to_obj(self.cfg.smpl_model_dir, out_dir=self.cfg.smpl_out_dir, bbox=self.bbox)
+            save_smpl_to_obj(self.cfg.smpl_model_dir, out_dir=self.cfg.smpl_out_dir, bbox=self.bbox,
+                            gender=self.cfg.smpl_gender)
             obj = pv.MeshObjectFactory(self.cfg.smpl_out_dir)
             self.sdf = pv.MeshSDF(obj)
 
