@@ -6,7 +6,7 @@ import smplx
 import trimesh
 
 def convert_sdf_to_alpha(sdf_guide):
-    beta = 1e-3
+    beta = 2e-3
     alpha = 1.0 / beta
     v = -1. * sdf_guide * alpha
     sg = alpha * torch.sigmoid(v)
@@ -29,7 +29,7 @@ def rotate_y(rad):
     ])
 
 def save_smpl_to_obj(model_folder, out_dir="smpl.obj", model_type='smplx', ext='npz', gender='neutral', 
-    num_betas=10, num_expression_coeffs=10, use_face_contour=False, sample_shape=True, sample_expression=True, bbox=None
+    num_betas=10, num_expression_coeffs=10, use_face_contour=False, sample_shape=False, sample_expression=True, bbox=None
     ,rotate=None):
     #print("model_type: ", model_type)
     model = smplx.create(model_folder, model_type=model_type,
@@ -40,12 +40,15 @@ def save_smpl_to_obj(model_folder, out_dir="smpl.obj", model_type='smplx', ext='
     betas, expression = None, None
     if sample_shape:
         betas = torch.randn([1, model.num_betas], dtype=torch.float32)
+    else:
+        betas = torch.zeros([1, model.num_betas], dtype=torch.float32)
+        betas[:, 1] = -0.5
     if sample_expression:
         expression = torch.randn(
             [1, model.num_expression_coeffs], dtype=torch.float32)
     a_pose = torch.zeros_like(model.body_pose).reshape(1,-1,3)
-    a_pose[:,12,2] = -0.6
-    a_pose[:,13,2] = 0.6
+    a_pose[:,12,2] = -0.8
+    a_pose[:,13,2] = 0.8
     output = model(body_pose=a_pose, betas=betas, expression=expression,
                    return_verts=True)
     vertices = output.vertices.detach().cpu().numpy().squeeze()
@@ -58,3 +61,6 @@ def save_smpl_to_obj(model_folder, out_dir="smpl.obj", model_type='smplx', ext='
     vertices = rotate_x(np.pi/2).dot(rotate_y(np.pi / 2).dot(vertices.T)).T
     tri_mesh = trimesh.Trimesh(vertices, model.faces)
     tri_mesh.export(out_dir)
+
+if __name__ == '__main__':
+    save_smpl_to_obj(model_folder="/home/zjp/zjp/threestudio", out_dir="/home/zjp/zjp/threestudio/smpl.obj", gender='neutral')
