@@ -16,6 +16,7 @@ from threestudio.utils.ops import get_activation
 from threestudio.utils.typing import *
 
 import pytorch_volumetric as pv
+import trimesh, mesh_to_sdf
 from threestudio.utils.smpl_utils import convert_sdf_to_alpha, save_smpl_to_obj
 
 @threestudio.register("implicit-volume")
@@ -80,6 +81,7 @@ class ImplicitVolume(BaseImplicitGeometry):
             )
         if self.cfg.density_bias == "smpl":
             save_smpl_to_obj(self.cfg.smpl_model_dir, out_dir=self.cfg.smpl_out_dir, bbox=self.bbox, gender=self.cfg.smpl_gender)
+           #self.mesh = trimesh.load(self.cfg.smpl_out_dir)
             obj = pv.MeshObjectFactory(self.cfg.smpl_out_dir)
             self.sdf = pv.MeshSDF(obj)
 
@@ -105,6 +107,9 @@ class ImplicitVolume(BaseImplicitGeometry):
                 )[..., None]
             )
         elif self.cfg.density_bias == "smpl":
+           #sdf_val = torch.tensor(mesh_to_sdf.mesh_to_sdf(
+           #    self.mesh, points.cpu().numpy(), surface_point_method='sample', sign_method='normal', sample_point_count=50000), 
+           #    dtype=torch.float32).cuda()
             with torch.no_grad():
                 sdf_val, sdf_grad = self.sdf(points)
             density_bias = convert_sdf_to_alpha(sdf_val).unsqueeze(-1)
@@ -144,7 +149,7 @@ class ImplicitVolume(BaseImplicitGeometry):
             output.update({"features": features})
 
         if output_normal:
-            print("gg")
+            #print("gg")
             if self.cfg.normal_type == "finite_difference":
                 # TODO: use raw density
                 eps = self.cfg.finite_difference_normal_eps
