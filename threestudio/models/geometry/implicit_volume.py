@@ -82,6 +82,14 @@ class ImplicitVolume(BaseImplicitGeometry):
             save_smpl_to_obj(self.cfg.smpl_model_dir, out_dir=self.cfg.smpl_out_dir, bbox=self.bbox, gender=self.cfg.smpl_gender)
             obj = pv.MeshObjectFactory(self.cfg.smpl_out_dir)
             self.sdf = pv.MeshSDF(obj)
+            # # test sdf
+            # query_range = np.array([
+            #     [-1.2, 1.2],
+            #     [-1.2, 1.2],
+            #     [0, 0],
+            # ])
+            # pv.draw_sdf_slice(self.sdf, query_range)
+            # exit()
 
     def get_activated_density(
         self, points: Float[Tensor, "*N Di"], density: Float[Tensor, "*N 1"]
