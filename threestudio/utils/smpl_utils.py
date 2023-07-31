@@ -60,6 +60,7 @@ def save_smpl_to_obj(model_folder, out_dir="smpl.obj", model_type='smplx', ext='
         vertices = vertices / vertices.max()
     vertices = rotate_x(np.pi/2).dot(rotate_y(np.pi / 2).dot(vertices.T)).T
     tri_mesh = trimesh.Trimesh(vertices, model.faces)
+    tri_mesh = tri_mesh.simplify_quadratic_decimation(1000)  # 1000是目标面数
     tri_mesh.export(out_dir)
 
 if __name__ == '__main__':
