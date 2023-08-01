@@ -7,6 +7,7 @@ from threestudio.systems.base import BaseLift3DSystem
 from threestudio.utils.ops import binary_cross_entropy, dot
 from threestudio.utils.typing import *
 
+from threestudio.utils.smpl_utils import zoom_bbox_in_apos
 
 @threestudio.register("dreamavatar-system")
 class DreamAvatar(BaseLift3DSystem):
@@ -15,7 +16,10 @@ class DreamAvatar(BaseLift3DSystem):
         # only used when refinement=True and from_coarse=True
         geometry_type: str = "coarse-implicit-volume"
         geometry: dict = field(default_factory=dict)
+        renderer_type: "nerf-volume-renderer"
+        renderer: dict = field(default_factory=dict)
         use_vsd: int = 1
+        zoomable: int = 1
     cfg: Config
 
     def configure(self):
@@ -28,12 +32,20 @@ class DreamAvatar(BaseLift3DSystem):
             )
             self.prompt_utils = self.prompt_processor()
             # self.renderer.training = True
+        self.head_bbox = zoom_bbox_in_apos()
 
     def forward(self, batch: Dict[str, Any]) -> Dict[str, Any]:
         render_out = self.renderer(**batch, render_normal=True)
-        return {
-            **render_out,
-        }
+        part_render_out = None
+        if self.cfg.zoomable:
+            batch["rays_o"] = batch["rays_o_head"]
+            batch["rays_d"] = batch["rays_d_head"]
+            part_render_out = self.renderer(**batch)
+        render_dict = {**render_out}
+        if self.cfg.zoomable:
+            # todo: add more part factorized process.
+            render_dict["comp_rgb_head"] = part_render_out["comp_rgb"]
+        return render_dict
 
     def on_fit_start(self) -> None:
         super().on_fit_start()
@@ -45,16 +57,29 @@ class DreamAvatar(BaseLift3DSystem):
 
     def training_step(self, batch, batch_idx):
         out = self(batch)
+        loss = 0.0
         guidance_out = self.guidance(
             out["comp_rgb"], self.prompt_utils, **batch, rgb_as_latents=False
         )
-
-        loss = 0.0
-
         for name, value in guidance_out.items():
             self.log(f"train/{name}", value)
             if name.startswith("loss_"):
                 loss += value * self.C(self.cfg.loss[name.replace("loss_", "lambda_")])
+        if self.cfg.zoomable:
+            # todo: add more part factorized process.
+            print(batch.keys())
+            exit()
+            origin_prompt = batch["prompt"]
+            # head
+            batch["prompt"] = "Headshot of " + origin_prompt
+            part_guidance_out = self.guidance(
+                out["comp_rgb_head"], self.prompt_utils, **batch, rgb_as_latents=False
+            )
+            for name, value in part_guidance_out.items():
+                self.log(f"train/part_{name}", value)
+                if name.startswith("loss_"):
+                    loss += value * self.C(self.cfg.loss[name.replace("loss_", "lambda_")])
+
         if not self.cfg.use_vsd:
             if "normal" not in out:
                 raise ValueError(

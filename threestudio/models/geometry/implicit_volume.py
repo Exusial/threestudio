@@ -16,7 +16,7 @@ from threestudio.utils.ops import get_activation
 from threestudio.utils.typing import *
 
 import pytorch_volumetric as pv
-import trimesh, mesh_to_sdf
+import trimesh
 from threestudio.utils.smpl_utils import convert_sdf_to_alpha, save_smpl_to_obj
 
 @threestudio.register("implicit-volume")

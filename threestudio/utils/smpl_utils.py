@@ -63,5 +63,18 @@ def save_smpl_to_obj(model_folder, out_dir="smpl.obj", model_type='smplx', ext='
     tri_mesh = tri_mesh.simplify_quadratic_decimation(1000)  # 1000是目标面数
     tri_mesh.export(out_dir)
 
+def zoom_bbox_in_apos():
+    # headshot, ordered by XYZ
+    head_bbox = [0.2,0.2,0.5,0.4,0.56,1.0]
+    # leftarm
+    lefthand_bbox = [0.2,0.5,-0.2,0.5,1.0,0.5]
+    # rightarm
+    # righthand_bbox = [0.2,0.5,0.2,0.5,1.0,0.5]
+    # # leftleg
+    # leftleg_bbox = [-0.2,0.5,-0.2,0.5,1.0,0.5]
+    # # rightleg
+    # rightleg_bbox = [-0.2,0.5,0.2,0.5,1.0,0.5]
+    return head_bbox
+
 if __name__ == '__main__':
     save_smpl_to_obj(model_folder="/home/zjp/zjp/threestudio", out_dir="/home/zjp/zjp/threestudio/smpl.obj", gender='neutral')
