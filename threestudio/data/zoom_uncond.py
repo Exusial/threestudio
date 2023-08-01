@@ -84,7 +84,7 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         self.height: int = self.heights[0]
         self.width: int = self.widths[0]
         self.directions_unit_focal = self.directions_unit_focals[0]
-        self.head_bbox = zoom_bbox_in_apos()
+        self.head_bbox = torch.tensor(zoom_bbox_in_apos())
 
     def update_step(self, epoch: int, global_step: int, on_load_weights: bool = False):
         size_ind = bisect.bisect_right(self.resolution_milestones, global_step) - 1
@@ -308,12 +308,13 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         points = points @ c2w[:, :3, :3].transpose(1, 2) + c2w[:, :3, 3:4].transpose(1, 2)
         # points = points[:, :, :2] / points[:, :, 2:3]
         points = points[:, :, :2]
-        p = torch.sort(points, 1)
+        points, _ = torch.sort(points, 1)
         rays_pb = []
         for b in range(points.shape[0]):
-            p_x = torch.arange(points[b,0,0].item(), points[b,1,0].item(), 64)
-            p_y = torch.arange(points[b,0,1].item(), points[b,1,1].item(), 64)
-            p_d = torch.meshgrid(p_x, p_y)
+            p_x = torch.linspace(points[b,0,0].item(), points[b,1,0].item(), 64)
+            p_y = torch.linspace(points[b,0,1].item(), points[b,1,1].item(), 64)
+            p_d = torch.stack(torch.meshgrid(p_x, p_y), dim=-1)
+            p_d = torch.cat([p_d, torch.ones_like(p_d[..., :1])], dim=-1)
             rays_pb.append(p_d)
         return torch.stack(rays_pb, 0)
 
@@ -433,8 +434,8 @@ class RandomCameraDataset(Dataset):
         return batch
 
 
-@register("random-camera-datamodule")
-class RandomCameraDataModule(pl.LightningDataModule):
+@register("zoom-random-camera-datamodule")
+class ZoomRandomCameraDataModule(pl.LightningDataModule):
     cfg: RandomCameraDataModuleConfig
 
     def __init__(self, cfg: Optional[Union[dict, DictConfig]] = None) -> None:

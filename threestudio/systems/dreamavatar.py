@@ -16,10 +16,8 @@ class DreamAvatar(BaseLift3DSystem):
         # only used when refinement=True and from_coarse=True
         geometry_type: str = "coarse-implicit-volume"
         geometry: dict = field(default_factory=dict)
-        renderer_type: "nerf-volume-renderer"
-        renderer: dict = field(default_factory=dict)
         use_vsd: int = 1
-        zoomable: int = 1
+        zoomable: int = 0
     cfg: Config
 
     def configure(self):
@@ -58,6 +56,9 @@ class DreamAvatar(BaseLift3DSystem):
     def training_step(self, batch, batch_idx):
         out = self(batch)
         loss = 0.0
+        origin_prompt = self.prompt_processor.prompt
+        # FB
+        self.prompt_processor.prompt = "Full body photo of " + origin_prompt
         guidance_out = self.guidance(
             out["comp_rgb"], self.prompt_utils, **batch, rgb_as_latents=False
         )
@@ -67,11 +68,7 @@ class DreamAvatar(BaseLift3DSystem):
                 loss += value * self.C(self.cfg.loss[name.replace("loss_", "lambda_")])
         if self.cfg.zoomable:
             # todo: add more part factorized process.
-            print(batch.keys())
-            exit()
-            origin_prompt = batch["prompt"]
-            # head
-            batch["prompt"] = "Headshot of " + origin_prompt
+            self.prompt_processor.prompt = "Headshot of " + origin_prompt
             part_guidance_out = self.guidance(
                 out["comp_rgb_head"], self.prompt_utils, **batch, rgb_as_latents=False
             )
