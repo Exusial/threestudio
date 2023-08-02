@@ -87,12 +87,16 @@ class StableDiffusionVSDGuidance(BaseModule):
         class SubModules:
             pipe: StableDiffusionPipeline
             pipe_lora: StableDiffusionPipeline
-
+        
+        # Hardcode here to utilize local models
         pipe = StableDiffusionPipeline.from_pretrained(
-            self.cfg.pretrained_model_name_or_path,
-            **pipe_kwargs,
+            "/home/penghy/.cache/huggingface/hub/models--stabilityai--stable-diffusion-2-1-base/snapshots/5ede9e4bf3e3fd1cb0ef2f7a3fff13ee514fdf06",
+            **pipe_kwargs
         ).to(self.device)
-
+        # pipe = StableDiffusionPipeline.from_pretrained(
+        #     self.cfg.pretrained_model_name_or_path,
+        #     **pipe_kwargs,
+        # ).to(self.device)
         if (
             self.cfg.pretrained_model_name_or_path
             == self.cfg.pretrained_model_name_or_path_lora
@@ -101,10 +105,15 @@ class StableDiffusionVSDGuidance(BaseModule):
             pipe_lora = pipe
         else:
             self.single_model = False
+            # Hardcode here to utilize local models
             pipe_lora = StableDiffusionPipeline.from_pretrained(
-                self.cfg.pretrained_model_name_or_path_lora,
-                **pipe_lora_kwargs,
+                "/home/penghy/.cache/huggingface/hub/models--stabilityai--stable-diffusion-2-1/snapshots/5cae40e6a2745ae2b01ad92ae5043f95f23644d6",
+                **pipe_kwargs
             ).to(self.device)
+            # pipe_lora = StableDiffusionPipeline.from_pretrained(
+            #     self.cfg.pretrained_model_name_or_path_lora,
+            #     **pipe_lora_kwargs,
+            # ).to(self.device)
             del pipe_lora.vae
             cleanup()
             pipe_lora.vae = pipe.vae

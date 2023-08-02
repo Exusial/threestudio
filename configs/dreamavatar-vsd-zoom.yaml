@@ -1,4 +1,4 @@
-name: "dreamavatar-vsd"
+name: "dreamavatar-vsd-zoom"
 tag: "${rmspace:${system.prompt_processor.prompt},_}"
 exp_root_dir: "outputs"
 seed: 0
@@ -24,7 +24,7 @@ system:
   zoomable: 1
   geometry_type: "implicit-volume"
   geometry:
-    radius: 1.0
+    radius: 2.0
     normal_type: "refnerf"
 
     # the density initialization proposed in the DreamFusion paper
@@ -94,24 +94,16 @@ system:
     prompt: ???
     front_threshold: 30.
     back_threshold: 30.
-  
-  guidance_type: "stable-diffusion-guidance"
+
+  guidance_type: "stable-diffusion-vsd-guidance"
   guidance:
     pretrained_model_name_or_path: "stabilityai/stable-diffusion-2-1-base"
-    guidance_scale: 100.
-    weighting_strategy: sds
+    pretrained_model_name_or_path_lora: "stabilityai/stable-diffusion-2-1"
+    guidance_scale: 10.
     min_step_percent: 0.02
     max_step_percent: 0.98
-
- #guidance_type: "stable-diffusion-vsd-guidance"
- #guidance:
- #  pretrained_model_name_or_path: "stabilityai/stable-diffusion-2-1-base"
- #  pretrained_model_name_or_path_lora: "stabilityai/stable-diffusion-2-1"
- #  guidance_scale: 10.
- #  min_step_percent: 0.02
- #  max_step_percent: 0.98
- #  max_step_percent_annealed: 0.5
- #  anneal_start_step: 5000
+    max_step_percent_annealed: 0.5
+    anneal_start_step: 5000
 
   loggers:
     wandb:

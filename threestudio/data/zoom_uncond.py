@@ -21,7 +21,7 @@ from threestudio.utils.ops import (
 )
 from threestudio.utils.typing import *
 
-from threestudio.utils.smpl_utils import zoom_bbox_in_apos
+from threestudio.utils.smpl_utils import zoom_bbox_in_apos, check_bbox
 
 @dataclass
 class RandomCameraDataModuleConfig:
@@ -277,6 +277,7 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         rays_o, rays_d = get_rays(directions, c2w, keepdim=True)
         # get zoomable part directions
         rays_d_head = self.project2pixel(c2w, self.head_bbox)
+
         rays_o_head, rays_d_head = get_rays(rays_d_head, c2w, keepdim=True)
 
         proj_mtx: Float[Tensor, "B 4 4"] = get_projection_matrix(
@@ -305,9 +306,9 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         # c2w: [B, 4, 4]
         # return: [B, N, 2]
         points = bbox.unsqueeze(0).repeat(c2w.shape[0], 1).view(-1, 2, 3)
-        points = points @ c2w[:, :3, :3].transpose(1, 2) + c2w[:, :3, 3:4].transpose(1, 2)
-        # points = points[:, :, :2] / points[:, :, 2:3]
-        points = points[:, :, :2]
+        points = (points - c2w[:,:3,3]) @ c2w[:, :3, :3]
+        points = points[:, :, :2] / points[:, :, 2:3]
+        # points = points[:, :, :2]
         points, _ = torch.sort(points, 1)
         rays_pb = []
         for b in range(points.shape[0]):

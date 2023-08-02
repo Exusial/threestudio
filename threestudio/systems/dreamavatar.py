@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
-
+import numpy as np
+import cv2
 import torch
 
 import threestudio
@@ -32,15 +33,15 @@ class DreamAvatar(BaseLift3DSystem):
             # self.renderer.training = True
         self.head_bbox = zoom_bbox_in_apos()
 
-    def forward(self, batch: Dict[str, Any]) -> Dict[str, Any]:
+    def forward(self, batch: Dict[str, Any], training=False) -> Dict[str, Any]:
         render_out = self.renderer(**batch, render_normal=True)
         part_render_out = None
-        if self.cfg.zoomable:
+        if self.cfg.zoomable and training:
             batch["rays_o"] = batch["rays_o_head"]
             batch["rays_d"] = batch["rays_d_head"]
             part_render_out = self.renderer(**batch)
         render_dict = {**render_out}
-        if self.cfg.zoomable:
+        if self.cfg.zoomable and training:
             # todo: add more part factorized process.
             render_dict["comp_rgb_head"] = part_render_out["comp_rgb"]
         return render_dict
@@ -54,11 +55,11 @@ class DreamAvatar(BaseLift3DSystem):
         # self.guidance = threestudio.find(self.cfg.guidance_type)(self.cfg.guidance)
 
     def training_step(self, batch, batch_idx):
-        out = self(batch)
+        out = self(batch, training=True)
         loss = 0.0
         origin_prompt = self.prompt_processor.prompt
         # FB
-        self.prompt_processor.prompt = "Full body photo of " + origin_prompt
+        # self.prompt_processor.prompt = "Full body photo of " + origin_prompt
         guidance_out = self.guidance(
             out["comp_rgb"], self.prompt_utils, **batch, rgb_as_latents=False
         )
@@ -72,6 +73,8 @@ class DreamAvatar(BaseLift3DSystem):
             part_guidance_out = self.guidance(
                 out["comp_rgb_head"], self.prompt_utils, **batch, rgb_as_latents=False
             )
+            # debug head part?
+            cv2.imwrite("head.png", np.rint(out["comp_rgb_head"][0].detach().cpu().numpy() * 255))
             for name, value in part_guidance_out.items():
                 self.log(f"train/part_{name}", value)
                 if name.startswith("loss_"):
