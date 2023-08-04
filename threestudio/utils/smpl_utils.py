@@ -72,7 +72,7 @@ def save_smpl_to_obj(model_folder, out_dir="smpl.obj", model_type='smplx', ext='
 
 def zoom_bbox_in_apos():
     # headshot, ordered by XYZ
-    head_bbox = [-0.25,-0.3,0,0.25,0.3,0.5]
+    head_bbox = [-0.25,-0.3,0,0.25,0.3,0.4]
     # leftarm
     lefthand_bbox = [0.2,0.5,-0.2,0.5,1.0,0.5]
     # rightarm
@@ -109,7 +109,6 @@ def check_bbox(c2w, camera_position=None):
     color[head_points[0, 0].int(), head_points[0, 1].int()] = [255, 0, 0]
     color[head_points[1, 0].int(), head_points[1, 1].int()] = [255, 0, 0]
     cv2.imwrite("out.png", color)
-    exit()
 
 if __name__ == '__main__':
     save_smpl_to_obj(model_folder="/home/zjp/zjp/threestudio", out_dir="/home/zjp/zjp/threestudio/smpl.obj", gender='neutral')

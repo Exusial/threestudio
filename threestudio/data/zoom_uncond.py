@@ -275,9 +275,14 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
 
         # Importance note: the returned rays_d MUST be normalized!
         rays_o, rays_d = get_rays(directions, c2w, keepdim=True)
+        # print(self.directions_unit_focal)
+
         # get zoomable part directions
         rays_d_head = self.project2pixel(c2w, self.head_bbox)
-
+        rays_d_head[:, :, :, :2] = rays_d_head[:, :, :, :2] / focal_length[:, None, None, None]
+        # print(rays_d_head[0,:10])
+        # print(directions[0,:10])
+        # exit()
         rays_o_head, rays_d_head = get_rays(rays_d_head, c2w, keepdim=True)
 
         proj_mtx: Float[Tensor, "B 4 4"] = get_projection_matrix(
@@ -302,21 +307,29 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         }
 
     def project2pixel(self, c2w, bbox):
+        import numpy as np
         # bbox: [6] # 1 part for now
         # c2w: [B, 4, 4]
         # return: [B, N, 2]
         points = bbox.unsqueeze(0).repeat(c2w.shape[0], 1).view(-1, 2, 3)
         points = (points - c2w[:,:3,3]) @ c2w[:, :3, :3]
-        points = points[:, :, :2] / points[:, :, 2:3]
+        points = points[:, :, :2] / points[:, :, 2:3] * 64
         # points = points[:, :, :2]
         points, _ = torch.sort(points, 1)
         rays_pb = []
         for b in range(points.shape[0]):
             p_x = torch.linspace(points[b,0,0].item(), points[b,1,0].item(), 64)
-            p_y = torch.linspace(points[b,0,1].item(), points[b,1,1].item(), 64)
-            p_d = torch.stack(torch.meshgrid(p_x, p_y), dim=-1)
-            p_d = torch.cat([p_d, torch.ones_like(p_d[..., :1])], dim=-1)
+            p_y = torch.linspace(points[b,1,1].item(), points[b,0,1].item(), 64)
+            p_d = torch.stack(torch.meshgrid(p_x, p_y, indexing="xy"), dim=-1)
+            p_d = torch.cat([p_d, -torch.ones_like(p_d[..., :1])], dim=-1)
             rays_pb.append(p_d)
+        # debug light position
+        # p_x = torch.linspace(-10, 10, 64)
+        # p_y = torch.linspace(15, -5, 64)
+        # p_d = torch.stack(torch.meshgrid(p_x, p_y, indexing="xy"), dim=-1)
+        # p_d
+        # p_d = torch.cat([p_d, -torch.ones_like(p_d[..., :1])], dim=-1)
+        # rays_pb = [p_d] * c2w.shape[0]
         return torch.stack(rays_pb, 0)
 
 class RandomCameraDataset(Dataset):

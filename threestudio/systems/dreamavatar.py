@@ -39,7 +39,7 @@ class DreamAvatar(BaseLift3DSystem):
         if self.cfg.zoomable and training:
             batch["rays_o"] = batch["rays_o_head"]
             batch["rays_d"] = batch["rays_d_head"]
-            part_render_out = self.renderer(**batch)
+            part_render_out = self.renderer(**batch, render_normal=False)
         render_dict = {**render_out}
         if self.cfg.zoomable and training:
             # todo: add more part factorized process.
@@ -59,7 +59,7 @@ class DreamAvatar(BaseLift3DSystem):
         loss = 0.0
         origin_prompt = self.prompt_processor.prompt
         # FB
-        # self.prompt_processor.prompt = "Full body photo of " + origin_prompt
+        self.prompt_processor.prompt = "Full body photo of " + origin_prompt
         guidance_out = self.guidance(
             out["comp_rgb"], self.prompt_utils, **batch, rgb_as_latents=False
         )
@@ -70,11 +70,13 @@ class DreamAvatar(BaseLift3DSystem):
         if self.cfg.zoomable:
             # todo: add more part factorized process.
             self.prompt_processor.prompt = "Headshot of " + origin_prompt
-            part_guidance_out = self.guidance(
-                out["comp_rgb_head"], self.prompt_utils, **batch, rgb_as_latents=False
-            )
+            with torch.no_grad():
+                part_guidance_out = self.guidance(
+                    out["comp_rgb_head"], self.prompt_utils, **batch, rgb_as_latents=False
+                )
             # debug head part?
-            cv2.imwrite("head.png", np.rint(out["comp_rgb_head"][0].detach().cpu().numpy() * 255))
+            # cv2.imwrite("body.png", np.rint(out["comp_rgb"][0].detach().cpu().numpy() * 255))
+            # cv2.imwrite("head.png", np.rint(out["comp_rgb_head"][0].detach().cpu().numpy() * 255))
             for name, value in part_guidance_out.items():
                 self.log(f"train/part_{name}", value)
                 if name.startswith("loss_"):

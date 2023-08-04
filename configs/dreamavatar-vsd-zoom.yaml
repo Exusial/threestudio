@@ -6,8 +6,8 @@ seed: 0
 data_type: "zoom-random-camera-datamodule"
 data:
   batch_size: 1
-  width: [64, 512]
-  height: [64, 512]
+  width: [64, 256]
+  height: [64, 256]
   resolution_milestones: [5000]
   camera_distance_range: [1.5, 2.0]
   fovy_range: [40, 70]
