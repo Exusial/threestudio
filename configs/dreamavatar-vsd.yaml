@@ -23,7 +23,7 @@ system:
   use_vsd: 1
   geometry_type: "implicit-volume"
   geometry:
-    radius: 1.0
+    radius: 2.0
     normal_type: "refnerf"
 
     # the density initialization proposed in the DreamFusion paper

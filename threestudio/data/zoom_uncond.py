@@ -314,8 +314,18 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
             # head_mode
             pass
 
-    def generate_directions_map(self):
-        pass
+    def generate_directions_map(self, lookat):
+        lookat: Float[Tensor, "B 3"] = F.normalize(center - camera_positions, dim=-1)
+        right: Float[Tensor, "B 3"] = F.normalize(torch.cross(lookat, up), dim=-1)
+        up = F.normalize(torch.cross(right, lookat), dim=-1)
+        c2w3x4: Float[Tensor, "B 3 4"] = torch.cat(
+            [torch.stack([right, up, -lookat], dim=-1), camera_positions[:, :, None]],
+            dim=-1,
+        )
+        c2w: Float[Tensor, "B 4 4"] = torch.cat(
+            [c2w3x4, torch.zeros_like(c2w3x4[:, :1])], dim=1
+        )
+        c2w[:, 3, 3] = 1.0
     
     def project2pixel(self, c2w, bbox):
         import numpy as np

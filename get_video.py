@@ -4,8 +4,8 @@ from PIL import Image
 import numpy as np
 
 # 定义图片路径
-#image_folder = '/home/zjp/zjp/threestudio/outputs/dreamavatar-sd/{}/save'.format('Captain_American_Full_Body@20230717-155644')  # 替换为你的路径
-image_folder = '/home/penghy/diffusion/threestudio/outputs/dreamavatar-vsd/{}/save'.format('Captain_American_Full_Body@20230717-155644')  # 替换为你的路径
+image_folder = '/home/zjp/zjp/threestudio/outputs/dreamavatar-vsd/{}/save'.format('Elsa@20230807-213758')  # 替换为你的路径
+#image_folder = '/home/penghy/diffusion/threestudio/outputs/dreamavatar-vsd/{}/save'.format('Captain_American_Full_Body@20230717-155644')  # 替换为你的路径
 video_name = 'output.mp4'
 
 # 获取文件夹中的图片列表
