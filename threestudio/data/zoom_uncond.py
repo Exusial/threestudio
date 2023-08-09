@@ -53,7 +53,9 @@ class RandomCameraDataModuleConfig:
     eval_fovy_deg: float = 70.0
     light_sample_strategy: str = "dreamfusion"
     batch_uniform_azimuth: bool = True
-
+    focus_mode: int = 0
+    progressive_radius: float = 1.0
+    max_steps: int = 30000
 
 class RandomCameraIterableDataset(IterableDataset, Updateable):
     def __init__(self, cfg: Any) -> None:
@@ -306,6 +308,15 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
             "rays_d_head": rays_d_head
         }
 
+    def focus_mode_camera_position(self, smpl):
+        # todo: test nodes here.
+        if self.cfg.focus_mode >= 1:
+            # head_mode
+            pass
+
+    def generate_directions_map(self):
+        pass
+    
     def project2pixel(self, c2w, bbox):
         import numpy as np
         # bbox: [6] # 1 part for now
@@ -323,13 +334,6 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
             p_d = torch.stack(torch.meshgrid(p_x, p_y, indexing="xy"), dim=-1)
             p_d = torch.cat([p_d, -torch.ones_like(p_d[..., :1])], dim=-1)
             rays_pb.append(p_d)
-        # debug light position
-        # p_x = torch.linspace(-10, 10, 64)
-        # p_y = torch.linspace(15, -5, 64)
-        # p_d = torch.stack(torch.meshgrid(p_x, p_y, indexing="xy"), dim=-1)
-        # p_d
-        # p_d = torch.cat([p_d, -torch.ones_like(p_d[..., :1])], dim=-1)
-        # rays_pb = [p_d] * c2w.shape[0]
         return torch.stack(rays_pb, 0)
 
 class RandomCameraDataset(Dataset):

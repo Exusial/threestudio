@@ -1,1 +1,1 @@
-from . import base, deepfloyd_prompt_processor, stable_diffusion_prompt_processor
+from . import base, deepfloyd_prompt_processor, stable_diffusion_prompt_processor, stable_diffusion_xl_prompt_processor

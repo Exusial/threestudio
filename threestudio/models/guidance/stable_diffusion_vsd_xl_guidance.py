@@ -34,12 +34,12 @@ class ToWeightsDType(nn.Module):
         return self.module(x).to(self.dtype)
 
 
-@threestudio.register("stable-diffusion-vsd-guidance")
-class StableDiffusionVSDGuidance(BaseModule):
+@threestudio.register("stable-diffusion-vsd-xl-guidance")
+class StableDiffusionVSDXLGuidance(BaseModule):
     @dataclass
     class Config(BaseModule.Config):
-        pretrained_model_name_or_path: str = "stabilityai/stable-diffusion-2-1-base"
-        pretrained_model_name_or_path_lora: str = "stabilityai/stable-diffusion-2-1"
+        pretrained_model_name_or_path: str = "stabilityai/stable-diffusion-xl-base-1.0"
+        pretrained_model_name_or_path_lora: str = "stabilityai/stable-diffusion-xl-base-1.0"
         enable_memory_efficient_attention: bool = False
         enable_sequential_cpu_offload: bool = False
         enable_attention_slicing: bool = False
@@ -89,14 +89,14 @@ class StableDiffusionVSDGuidance(BaseModule):
             pipe_lora: StableDiffusionPipeline
         
         # Hardcode here to utilize local models
-        pipe = StableDiffusionPipeline.from_pretrained(
-            "/home/penghy/.cache/huggingface/hub/models--stabilityai--stable-diffusion-2-1-base/snapshots/5ede9e4bf3e3fd1cb0ef2f7a3fff13ee514fdf06",
-            **pipe_kwargs
-        ).to(self.device)
         # pipe = StableDiffusionPipeline.from_pretrained(
-        #     self.cfg.pretrained_model_name_or_path,
-        #     **pipe_kwargs,
+        #     "/home/penghy/.cache/huggingface/hub/models--stabilityai--stable-diffusion-xl-base-1.0/snapshots/bf714989e22c57ddc1c453bf74dab4521acb81d8",
+        #     **pipe_kwargs
         # ).to(self.device)
+        pipe = StableDiffusionPipeline.from_pretrained(
+            self.cfg.pretrained_model_name_or_path,
+            **pipe_kwargs,
+        ).to(self.device)
         if (
             self.cfg.pretrained_model_name_or_path
             == self.cfg.pretrained_model_name_or_path_lora
@@ -106,14 +106,14 @@ class StableDiffusionVSDGuidance(BaseModule):
         else:
             self.single_model = False
             # Hardcode here to utilize local models
-            pipe_lora = StableDiffusionPipeline.from_pretrained(
-                "/home/penghy/.cache/huggingface/hub/models--stabilityai--stable-diffusion-2-1/snapshots/5cae40e6a2745ae2b01ad92ae5043f95f23644d6",
-                **pipe_kwargs
-            ).to(self.device)
             # pipe_lora = StableDiffusionPipeline.from_pretrained(
-            #     self.cfg.pretrained_model_name_or_path_lora,
-            #     **pipe_lora_kwargs,
+            #     "/home/penghy/.cache/huggingface/hub/models--stabilityai--stable-diffusion-xl-base-1.0/snapshots/bf714989e22c57ddc1c453bf74dab4521acb81d8",
+            #     **pipe_kwargs
             # ).to(self.device)
+            pipe_lora = StableDiffusionPipeline.from_pretrained(
+                self.cfg.pretrained_model_name_or_path_lora,
+                **pipe_lora_kwargs,
+            ).to(self.device)
             del pipe_lora.vae
             cleanup()
             pipe_lora.vae = pipe.vae
@@ -341,7 +341,8 @@ class StableDiffusionVSDGuidance(BaseModule):
             camera_distances,
             view_dependent_prompting=self.cfg.view_dependent_prompting,
         )
-
+        
+        
         cross_attention_kwargs = {"scale": 0.0} if self.single_model else None
         generator = torch.Generator(device=self.device).manual_seed(seed)
 
@@ -369,6 +370,10 @@ class StableDiffusionVSDGuidance(BaseModule):
         # input text embeddings, view-independent
         text_embeddings = prompt_utils.get_text_embeddings(
             elevation, azimuth, camera_distances, view_dependent_prompting=False
+        )
+
+        text_embeddings_pooled = prompt_utils.get_text_embeddings_pooled(
+            elevation, azimuth, camera_distances, self.cfg.view_dependent_prompting
         )
 
         if self.cfg.camera_condition_type == "extrinsics":
@@ -399,6 +404,7 @@ class StableDiffusionVSDGuidance(BaseModule):
             class_labels=camera_condition_cfg,
             cross_attention_kwargs={"scale": 1.0},
             generator=generator,
+            added_text_embeddings=text_embeddings_pooled
         )
 
     @torch.cuda.amp.autocast(enabled=False)
@@ -410,6 +416,7 @@ class StableDiffusionVSDGuidance(BaseModule):
         encoder_hidden_states: Float[Tensor, "..."],
         class_labels: Optional[Float[Tensor, "B 16"]] = None,
         cross_attention_kwargs: Optional[Dict[str, Any]] = None,
+        added_cond_kwargs: Optional[Dict[str, Any]] = None,
     ) -> Float[Tensor, "..."]:
         input_dtype = latents.dtype
         return unet(
@@ -418,6 +425,7 @@ class StableDiffusionVSDGuidance(BaseModule):
             encoder_hidden_states=encoder_hidden_states.to(self.weights_dtype),
             class_labels=class_labels,
             cross_attention_kwargs=cross_attention_kwargs,
+            added_cond_kwargs=added_cond_kwargs
         ).sample.to(input_dtype)
 
     @torch.cuda.amp.autocast(enabled=False)
@@ -480,9 +488,17 @@ class StableDiffusionVSDGuidance(BaseModule):
         text_embeddings_vd: Float[Tensor, "BB 77 768"],
         text_embeddings: Float[Tensor, "BB 77 768"],
         camera_condition: Float[Tensor, "B 4 4"],
+        add_text_embeds
     ):
         B = latents.shape[0]
-       
+        H, W = latents.shape[-2] * 8, latents.shape[-1] * 8
+        original_size = (H, W)
+        target_size = (H, W)
+
+        add_time_ids = self._get_add_time_ids(
+            original_size, (0, 0), target_size, dtype=latents.dtype
+        ).to(latents)
+        
         with torch.no_grad():
             # random timestamp
             t = torch.randint(
@@ -497,6 +513,10 @@ class StableDiffusionVSDGuidance(BaseModule):
             latents_noisy = self.scheduler.add_noise(latents, noise, t)
             # pred noise
             latent_model_input = torch.cat([latents_noisy] * 2, dim=0)
+            added_cond_kwargs = {
+                "text_embeds": add_text_embeds,
+                "time_ids": torch.cat([add_time_ids] * 2, dim=0),
+            }
             with self.disable_unet_class_embedding(self.unet) as unet:
                 cross_attention_kwargs = {"scale": 0.0} if self.single_model else None
                 noise_pred_pretrain = self.forward_unet(
@@ -505,6 +525,7 @@ class StableDiffusionVSDGuidance(BaseModule):
                     torch.cat([t] * 2),
                     encoder_hidden_states=text_embeddings_vd,
                     cross_attention_kwargs=cross_attention_kwargs,
+                    added_cond_kwargs=added_cond_kwargs,
                 )
 
             # use view-independent text embeddings in LoRA
@@ -521,6 +542,7 @@ class StableDiffusionVSDGuidance(BaseModule):
                     dim=0,
                 ),
                 cross_attention_kwargs={"scale": 1.0},
+                added_cond_kwargs=added_cond_kwargs,
             )
 
         (
@@ -566,9 +588,18 @@ class StableDiffusionVSDGuidance(BaseModule):
         latents: Float[Tensor, "B 4 64 64"],
         text_embeddings: Float[Tensor, "BB 77 768"],
         camera_condition: Float[Tensor, "B 4 4"],
+        add_text_embeds
     ):
         B = latents.shape[0]
         latents = latents.detach().repeat(self.cfg.lora_n_timestamp_samples, 1, 1, 1)
+
+        H, W = latents.shape[-2] * 8, latents.shape[-1] * 8
+        original_size = (H, W)
+        target_size = (H, W)
+
+        add_time_ids = self._get_add_time_ids(
+            original_size, (0, 0), target_size, dtype=latents.dtype
+        ).to(latents)
 
         t = torch.randint(
             int(self.num_train_timesteps * 0.0),
@@ -592,6 +623,10 @@ class StableDiffusionVSDGuidance(BaseModule):
         text_embeddings, _ = text_embeddings.chunk(2)
         if self.cfg.lora_cfg_training and random.random() < 0.1:
             camera_condition = torch.zeros_like(camera_condition)
+        added_cond_kwargs = {
+            "add_text_embeds": add_text_embeds,
+            "add_time_ids": add_time_ids,
+        }
         noise_pred = self.forward_unet(
             self.unet_lora,
             noisy_latents,
@@ -603,6 +638,7 @@ class StableDiffusionVSDGuidance(BaseModule):
                 self.cfg.lora_n_timestamp_samples, 1
             ),
             cross_attention_kwargs={"scale": 1.0},
+            added_cond_kwargs=added_cond_kwargs,
         )
         return F.mse_loss(noise_pred.float(), target.float(), reduction="mean")
 
@@ -646,6 +682,10 @@ class StableDiffusionVSDGuidance(BaseModule):
             view_dependent_prompting=self.cfg.view_dependent_prompting,
         )
 
+        text_embeddings_pooled = prompt_utils.get_text_embeddings_pooled(
+            elevation, azimuth, camera_distances, self.cfg.view_dependent_prompting
+        )
+
         # input text embeddings, view-independent
         text_embeddings = prompt_utils.get_text_embeddings(
             elevation, azimuth, camera_distances, view_dependent_prompting=False
@@ -661,7 +701,7 @@ class StableDiffusionVSDGuidance(BaseModule):
             )
 
         grad = self.compute_grad_vsd(
-            latents, text_embeddings_vd, text_embeddings, camera_condition
+            latents, text_embeddings_vd, text_embeddings, camera_condition, added_text_embeddings
         )
 
         grad = torch.nan_to_num(grad)
@@ -671,7 +711,7 @@ class StableDiffusionVSDGuidance(BaseModule):
         target = (latents - grad).detach()
         loss_vsd = 0.5 * F.mse_loss(latents, target, reduction="sum") / batch_size
 
-        loss_lora = self.train_lora(latents, text_embeddings, camera_condition)
+        loss_lora = self.train_lora(latents, text_embeddings, camera_condition, text_embeddings_pooled)
 
         return {
             "loss_vsd": loss_vsd,
