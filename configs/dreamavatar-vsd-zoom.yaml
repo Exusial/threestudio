@@ -17,6 +17,8 @@ data:
   up_perturb: 0.
   eval_camera_distance: 2.0
   eval_fovy_deg: 70.
+  focus_mode: 1
+  focus_camera_distance: 0.8
 
 system_type: "dreamavatar-system"
 system:
@@ -97,8 +99,8 @@ system:
 
   guidance_type: "stable-diffusion-vsd-guidance"
   guidance:
-    pretrained_model_name_or_path: "stabilityai/stable-diffusion-2-1-base"
-    pretrained_model_name_or_path_lora: "stabilityai/stable-diffusion-2-1"
+    pretrained_model_name_or_path: "/home/penghy/.cache/huggingface/hub/models--stabilityai--stable-diffusion-2-1-base/snapshots/5ede9e4bf3e3fd1cb0ef2f7a3fff13ee514fdf06/"
+    pretrained_model_name_or_path_lora: "/home/penghy/.cache/huggingface/hub/models--stabilityai--stable-diffusion-2-1/snapshots/5cae40e6a2745ae2b01ad92ae5043f95f23644d6/"
     guidance_scale: 10.
     min_step_percent: 0.02
     max_step_percent: 0.98

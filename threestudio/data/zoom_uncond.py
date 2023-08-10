@@ -2,6 +2,7 @@ import bisect
 import math
 import random
 from dataclasses import dataclass, field
+import trimesh
 
 import pytorch_lightning as pl
 import torch
@@ -56,6 +57,8 @@ class RandomCameraDataModuleConfig:
     focus_mode: int = 0
     progressive_radius: float = 1.0
     max_steps: int = 30000
+    focus_camera_distance: float = 0.6
+    smpl_dir: str = "smpl.obj"
 
 class RandomCameraIterableDataset(IterableDataset, Updateable):
     def __init__(self, cfg: Any) -> None:
@@ -87,6 +90,7 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         self.width: int = self.widths[0]
         self.directions_unit_focal = self.directions_unit_focals[0]
         self.head_bbox = torch.tensor(zoom_bbox_in_apos())
+        self.smpl_mesh = trimesh.load(self.cfg.smpl_dir)
 
     def update_step(self, epoch: int, global_step: int, on_load_weights: bool = False):
         size_ind = bisect.bisect_right(self.resolution_milestones, global_step) - 1
@@ -279,20 +283,22 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         rays_o, rays_d = get_rays(directions, c2w, keepdim=True)
         # print(self.directions_unit_focal)
 
-        # get zoomable part directions
-        rays_d_head = self.project2pixel(c2w, self.head_bbox)
-        rays_d_head[:, :, :, :2] = rays_d_head[:, :, :, :2] / focal_length[:, None, None, None]
+        # get focus mode part directions
+        focus = self.focus_mode_camera_position(self.smpl_mesh)
+        focus_rays = self.generate_directions_map(focus, focal_length)
+        # rays_d_head = self.project2pixel(c2w, self.head_bbox)
+        # rays_d_head[:, :, :, :2] = rays_d_head[:, :, :, :2] / focal_length[:, None, None, None]
         # print(rays_d_head[0,:10])
         # print(directions[0,:10])
         # exit()
-        rays_o_head, rays_d_head = get_rays(rays_d_head, c2w, keepdim=True)
+        # rays_o_head, rays_d_head = get_rays(rays_d_head, c2w, keepdim=True)
 
         proj_mtx: Float[Tensor, "B 4 4"] = get_projection_matrix(
             fovy, self.width / self.height, 0.1, 1000.0
         )  # FIXME: hard-coded near and far
         mvp_mtx: Float[Tensor, "B 4 4"] = get_mvp_matrix(c2w, proj_mtx)
 
-        return {
+        batch =  {
             "rays_o": rays_o,
             "rays_d": rays_d,
             "mvp_mtx": mvp_mtx,
@@ -304,29 +310,75 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
             "camera_distances": camera_distances,
             "height": self.height,
             "width": self.width,
-            "rays_o_head": rays_o_head,
-            "rays_d_head": rays_d_head
         }
+        for k, v in focus_rays.items():
+            batch[k] = v
+        return batch
 
-    def focus_mode_camera_position(self, smpl):
+    SMPLX_VERTEX_MAP = {
+        'nose':		    9120,
+        'reye':		    9929,
+        'leye':		    9448,
+        'rear':		    616,
+        'lear':		    6,
+        'rthumb':		8079,
+        'rindex':		7669,
+        'rmiddle':		7794,
+        'rring':		7905,
+        'rpinky':		8022,
+        'lthumb':		5361,
+        'lindex':		4933,
+        'lmiddle':		5058,
+        'lring':		5169,
+        'lpinky':		5286,
+        'LBigToe':		5770,
+        'LSmallToe':    5780,
+        'LHeel':		8846,
+        'RBigToe':		8463,
+        'RSmallToe': 	8474,
+        'RHeel':  		8635
+    }
+
+    def focus_mode_camera_position(self, smpl_mesh):
         # todo: test nodes here.
+        focus = {}
         if self.cfg.focus_mode >= 1:
             # head_mode
-            pass
+            nose_point, nose_normal = torch.tensor(smpl_mesh.vertices[9120], dtype=torch.float), torch.tensor(smpl_mesh.vertex_normals[9120], dtype=torch.float)
+            center_perturb: Float[Tensor, "B 3"] = (
+                torch.randn(self.cfg.batch_size, 3) * self.cfg.center_perturb
+            ) * 0.1
+            center = nose_point.unsqueeze(0) + center_perturb
+            head_camera_positions = center + nose_normal.unsqueeze(0) * self.cfg.focus_camera_distance
+            focus["head"] = {"pos": head_camera_positions, "lookat": -nose_normal}
+        return focus
 
-    def generate_directions_map(self, lookat):
-        lookat: Float[Tensor, "B 3"] = F.normalize(center - camera_positions, dim=-1)
-        right: Float[Tensor, "B 3"] = F.normalize(torch.cross(lookat, up), dim=-1)
-        up = F.normalize(torch.cross(right, lookat), dim=-1)
-        c2w3x4: Float[Tensor, "B 3 4"] = torch.cat(
-            [torch.stack([right, up, -lookat], dim=-1), camera_positions[:, :, None]],
-            dim=-1,
-        )
-        c2w: Float[Tensor, "B 4 4"] = torch.cat(
-            [c2w3x4, torch.zeros_like(c2w3x4[:, :1])], dim=1
-        )
-        c2w[:, 3, 3] = 1.0
-    
+    def generate_directions_map(self, focus, focal_length):
+        focus_rays = {}
+        up = torch.tensor([[1.0, 0.0, 0.0]], dtype=torch.float32).repeat(self.cfg.batch_size,1)
+        for part, part_info in focus.items():
+            lookat = part_info["lookat"].unsqueeze(0).repeat(self.cfg.batch_size, 1)
+            right: Float[Tensor, "B 3"] = F.normalize(torch.cross(lookat, up), dim=-1)
+            up = F.normalize(torch.cross(right, lookat), dim=-1)
+            c2w3x4: Float[Tensor, "B 3 4"] = torch.cat(
+                [torch.stack([right, up, -lookat], dim=-1), part_info["pos"][:, :, None]],
+                dim=-1,
+            )
+            c2w: Float[Tensor, "B 4 4"] = torch.cat(
+                [c2w3x4, torch.zeros_like(c2w3x4[:, :1])], dim=1
+            )
+            c2w[:, 3, 3] = 1.0
+            directions: Float[Tensor, "B H W 3"] = self.directions_unit_focal[
+                None, :, :, :
+            ].repeat(self.cfg.batch_size, 1, 1, 1)
+            directions[:, :, :, :2] = (
+                directions[:, :, :, :2] / focal_length[:, None, None, None]
+            )
+            rays_o, rays_d = get_rays(directions, c2w, keepdim=True)
+            focus_rays[f"rays_o_{part}"] = rays_o
+            focus_rays[f"rays_d_{part}"] = rays_d
+        return focus_rays
+
     def project2pixel(self, c2w, bbox):
         import numpy as np
         # bbox: [6] # 1 part for now

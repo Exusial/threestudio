@@ -32,7 +32,7 @@ class DreamAvatar(BaseLift3DSystem):
             self.prompt_utils = self.prompt_processor()
             # self.renderer.training = True
         self.head_bbox = zoom_bbox_in_apos()
-
+        self.focus_mode = ["head"]
     def forward(self, batch: Dict[str, Any], training=False) -> Dict[str, Any]:
         render_out = self.renderer(**batch, render_normal=True)
         part_render_out = None
@@ -75,8 +75,9 @@ class DreamAvatar(BaseLift3DSystem):
                     out["comp_rgb_head"], self.prompt_utils, **batch, rgb_as_latents=False
                 )
             # debug head part?
-            # cv2.imwrite("body.png", np.rint(out["comp_rgb"][0].detach().cpu().numpy() * 255))
-            # cv2.imwrite("head.png", np.rint(out["comp_rgb_head"][0].detach().cpu().numpy() * 255))
+            cv2.imwrite("body.png", np.rint(out["comp_rgb"][0].detach().cpu().numpy() * 255))
+            cv2.imwrite("head.png", np.rint(out["comp_rgb_head"][0].detach().cpu().numpy() * 255))
+            
             for name, value in part_guidance_out.items():
                 self.log(f"train/part_{name}", value)
                 if name.startswith("loss_"):
