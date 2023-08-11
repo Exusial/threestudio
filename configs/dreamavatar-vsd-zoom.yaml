@@ -8,7 +8,7 @@ data:
   batch_size: 1
   width: [64, 256]
   height: [64, 256]
-  resolution_milestones: [5000]
+  resolution_milestones: [10000]
   camera_distance_range: [1.5, 2.0]
   fovy_range: [40, 70]
   elevation_range: [-10, 90]
@@ -101,6 +101,15 @@ system:
   guidance:
     pretrained_model_name_or_path: "/home/penghy/.cache/huggingface/hub/models--stabilityai--stable-diffusion-2-1-base/snapshots/5ede9e4bf3e3fd1cb0ef2f7a3fff13ee514fdf06/"
     pretrained_model_name_or_path_lora: "/home/penghy/.cache/huggingface/hub/models--stabilityai--stable-diffusion-2-1/snapshots/5cae40e6a2745ae2b01ad92ae5043f95f23644d6/"
+    guidance_scale: 10.
+    min_step_percent: 0.02
+    max_step_percent: 0.98
+    max_step_percent_annealed: 0.5
+    anneal_start_step: 5000
+
+  guidance_type: "stable-diffusion-guidance"
+  guidance:
+    pretrained_model_name_or_path: "/home/penghy/.cache/huggingface/hub/models--stabilityai--stable-diffusion-2-1-base/snapshots/5ede9e4bf3e3fd1cb0ef2f7a3fff13ee514fdf06/"
     guidance_scale: 10.
     min_step_percent: 0.02
     max_step_percent: 0.98

@@ -19,7 +19,7 @@ class DreamAvatar(BaseLift3DSystem):
         geometry: dict = field(default_factory=dict)
         use_vsd: int = 1
         zoomable: int = 0
-        part_stage: float = 15000
+        part_stage: float = 10000
     cfg: Config
 
     def configure(self):
@@ -34,6 +34,7 @@ class DreamAvatar(BaseLift3DSystem):
             # self.renderer.training = True
         self.head_bbox = zoom_bbox_in_apos()
         self.focus_mode = ["head"]
+
     def forward(self, batch: Dict[str, Any], training=False) -> Dict[str, Any]:
         render_out = self.renderer(**batch, render_normal=True)
         part_render_out = None
@@ -57,6 +58,9 @@ class DreamAvatar(BaseLift3DSystem):
 
     def training_step(self, batch, batch_idx):
         out = self(batch, training=True)
+        if batch_idx == self.cfg.part_stage:
+            self.cfg.use_vsd = 0
+            self.guidance = self.sds_guidance
         loss = 0.0
         origin_prompt = self.prompt_processor.prompt
         # FB
