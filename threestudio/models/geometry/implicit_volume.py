@@ -109,10 +109,10 @@ class ImplicitVolume(BaseImplicitGeometry):
                 )[..., None]
             )
         elif self.cfg.density_bias == "smpl":
-            sdf_val = -torch.tensor(self.sdf(points.to("cpu").numpy())).to(points.device)
-           #import pdb; pdb.set_trace()
-           #with torch.no_grad():
-           #    sdf_val, sdf_grad = self.sdf(points)
+            sdf_val = -torch.tensor(self.sdf(points.detach().to("cpu").numpy())).to(points.device)
+            #import pdb; pdb.set_trace()
+            #with torch.no_grad():
+            #    sdf_val, sdf_grad = self.sdf(points)
             density_bias = convert_sdf_to_alpha(sdf_val).unsqueeze(-1)
         elif isinstance(self.cfg.density_bias, float):
             density_bias = self.cfg.density_bias

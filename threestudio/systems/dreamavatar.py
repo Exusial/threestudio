@@ -19,6 +19,7 @@ class DreamAvatar(BaseLift3DSystem):
         geometry: dict = field(default_factory=dict)
         use_vsd: int = 1
         zoomable: int = 0
+        part_stage: float = 15000
     cfg: Config
 
     def configure(self):
@@ -69,7 +70,7 @@ class DreamAvatar(BaseLift3DSystem):
                 loss += value * self.C(self.cfg.loss[name.replace("loss_", "lambda_")])
         if self.cfg.zoomable:
             # todo: add more part factorized process.
-            self.prompt_processor.prompt = "Headshot of " + origin_prompt
+            self.prompt_processor.prompt = "Front headshot of " + origin_prompt
             with torch.no_grad():
                 part_guidance_out = self.guidance(
                     out["comp_rgb_head"], self.prompt_utils, **batch, rgb_as_latents=False
@@ -81,7 +82,7 @@ class DreamAvatar(BaseLift3DSystem):
             for name, value in part_guidance_out.items():
                 self.log(f"train/part_{name}", value)
                 if name.startswith("loss_"):
-                    loss += value * self.C(self.cfg.loss[name.replace("loss_", "lambda_")])
+                    loss += value * self.C(self.cfg.loss[name.replace("loss_", "lambda_")]) * 0.2
 
         if not self.cfg.use_vsd:
             if "normal" not in out:
