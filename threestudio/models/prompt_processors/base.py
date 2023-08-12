@@ -249,7 +249,7 @@ class PromptProcessor(BaseObject):
         pretrained_model_name_or_path_prompt_debiasing: str = "bert-base-uncased"
         # index of words that can potentially be removed
         prompt_debiasing_mask_ids: Optional[List[int]] = None
-
+        part_prompt: str = None
     cfg: Config
 
     @rank_zero_only
@@ -338,6 +338,7 @@ class PromptProcessor(BaseObject):
             self.prompt_library = json.load(f)
         # use provided prompt or find prompt in library
         self.prompt = self.preprocess_prompt(self.cfg.prompt)
+        self.part_prompt = self.cfg.part_prompt
         # use provided negative prompt
         self.negative_prompt = self.cfg.negative_prompt
 

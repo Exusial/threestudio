@@ -17,9 +17,12 @@ class DreamAvatar(BaseLift3DSystem):
         # only used when refinement=True and from_coarse=True
         geometry_type: str = "coarse-implicit-volume"
         geometry: dict = field(default_factory=dict)
+        sds_guidance_type: str = "stable-diffusion-guidance"
+        sds_guidance: dict = field(default_factory=dict)
         use_vsd: int = 1
         zoomable: int = 0
         part_stage: float = 10000
+        fine_stage: float = 10000
     cfg: Config
 
     def configure(self):
@@ -31,21 +34,35 @@ class DreamAvatar(BaseLift3DSystem):
                 self.cfg.prompt_processor
             )
             self.prompt_utils = self.prompt_processor()
+            # if self.cfg.part_stage > 0:
+            #     self.sds_guidance = threestudio.find(self.cfg.sds_guidance_type)(self.cfg.sds_guidance)
             # self.renderer.training = True
         self.head_bbox = zoom_bbox_in_apos()
         self.focus_mode = ["head"]
+        self.stage = "nerf"
 
     def forward(self, batch: Dict[str, Any], training=False) -> Dict[str, Any]:
-        render_out = self.renderer(**batch, render_normal=True)
-        part_render_out = None
-        if self.cfg.zoomable and training:
-            batch["rays_o"] = batch["rays_o_head"]
-            batch["rays_d"] = batch["rays_d_head"]
-            part_render_out = self.renderer(**batch, render_normal=False)
-        render_dict = {**render_out}
-        if self.cfg.zoomable and training:
-            # todo: add more part factorized process.
-            render_dict["comp_rgb_head"] = part_render_out["comp_rgb"]
+        if self.stage == "nerf":
+            render_out = self.renderer(**batch, render_normal=True)
+            part_render_out = None
+            if self.cfg.zoomable and training:
+                batch["rays_o"] = batch["rays_o_head"]
+                batch["rays_d"] = batch["rays_d_head"]
+                part_render_out = self.renderer(**batch, render_normal=False)
+            render_dict = {**render_out}
+            if self.cfg.zoomable and training:
+                # todo: add more part factorized process.
+                render_dict["comp_rgb_head"] = part_render_out["comp_rgb"]
+        else:
+            render_out = self.renderer(**batch, render_normal=True)
+            part_render_out = None
+            if self.cfg.zoomable and training:
+                batch["rays_o"] = batch["rays_o_head"]
+                batch["rays_d"] = batch["rays_d_head"]
+                part_render_out = self.renderer(**batch, render_normal=False)
+            render_dict = {**render_out}
+            if self.cfg.zoomable and training:
+                render_dict["comp_rgb_head"] = part_render_out["comp_rgb"]
         return render_dict
 
     def on_fit_start(self) -> None:
@@ -56,25 +73,32 @@ class DreamAvatar(BaseLift3DSystem):
         # )
         # self.guidance = threestudio.find(self.cfg.guidance_type)(self.cfg.guidance)
 
+    def change_rep(self):
+        pass
+
     def training_step(self, batch, batch_idx):
-        out = self(batch, training=True)
         if batch_idx == self.cfg.part_stage:
             self.cfg.use_vsd = 0
+            del self.guidance 
             self.guidance = self.sds_guidance
+        out = self(batch, training=True)
         loss = 0.0
         origin_prompt = self.prompt_processor.prompt
         # FB
-        self.prompt_processor.prompt = "Full body photo of " + origin_prompt
+        # self.prompt_processor.prompt = "Full body photo of " + origin_prompt
         guidance_out = self.guidance(
             out["comp_rgb"], self.prompt_utils, **batch, rgb_as_latents=False
         )
+        mesh = self.geometry.isosurface()
+        mesh.export()
+        exit()
         for name, value in guidance_out.items():
             self.log(f"train/{name}", value)
             if name.startswith("loss_"):
                 loss += value * self.C(self.cfg.loss[name.replace("loss_", "lambda_")])
-        if self.cfg.zoomable:
+        if self.cfg.zoomable and batch_idx >= self.cfg.part_stage:
             # todo: add more part factorized process.
-            self.prompt_processor.prompt = "Front headshot of " + origin_prompt
+            self.prompt_processor.prompt = self.prompt_processor.preprocess_prompt("headshot of " + self.prompt_processor.part_prompt)
             with torch.no_grad():
                 part_guidance_out = self.guidance(
                     out["comp_rgb_head"], self.prompt_utils, **batch, rgb_as_latents=False
@@ -88,31 +112,43 @@ class DreamAvatar(BaseLift3DSystem):
                 if name.startswith("loss_"):
                     loss += value * self.C(self.cfg.loss[name.replace("loss_", "lambda_")]) * 0.2
 
-        if not self.cfg.use_vsd:
-            if "normal" not in out:
-                raise ValueError(
-                    "Normal is required for normal correlation loss, no normal is found in the output."
+        if self.stage == "nerf":
+            # if not self.cfg.use_vsd:
+            #     if "normal" not in out:
+            #         raise ValueError(
+            #             "Normal is required for normal correlation loss, no normal is found in the output."
+            #         )
+            #     loss_normal = torch.mean((out["normal"] - out["shading_normal"]) ** 2)
+            #     lambda_normal = torch.mean(torch.sqrt((1 - torch.exp(-out["density"])) ** 2))
+            #     self.log("train/loss_normal", loss_normal * lambda_normal)
+            #     loss += loss_normal * lambda_normal * self.cfg.loss.lambda_sparsity
+            loss_sparsity = (out["opacity"] ** 2 + 0.01).sqrt().mean()
+            self.log("train/loss_sparsity", loss_sparsity)
+            loss += loss_sparsity * self.C(self.cfg.loss.lambda_sparsity)
+
+            opacity_clamped = out["opacity"].clamp(1.0e-3, 1.0 - 1.0e-3)
+            loss_opaque = binary_cross_entropy(opacity_clamped, opacity_clamped)
+            self.log("train/loss_opaque", loss_opaque)
+            loss += loss_opaque * self.C(self.cfg.loss.lambda_opaque)
+
+            # z variance loss proposed in HiFA: http://arxiv.org/abs/2305.18766
+            # helps reduce floaters and produce solid geometry
+            loss_z_variance = out["z_variance"][out["opacity"] > 0.5].mean()
+            self.log("train/loss_z_variance", loss_z_variance)
+            loss += loss_z_variance * self.C(self.cfg.loss.lambda_z_variance)
+        else:
+            loss_normal_consistency = self.geometry.normal_consistency()
+            self.log("train/loss_normal_consistency", loss_normal_consistency)
+            loss += loss_normal_consistency * self.C(
+                self.cfg.loss.lambda_normal_consistency
+            )
+
+            if self.C(self.cfg.loss.lambda_laplacian_smoothness) > 0:
+                loss_laplacian_smoothness = out["mesh"].laplacian()
+                self.log("train/loss_laplacian_smoothness", loss_laplacian_smoothness)
+                loss += loss_laplacian_smoothness * self.C(
+                    self.cfg.loss.lambda_laplacian_smoothness
                 )
-            loss_normal = torch.mean((out["normal"] - out["shading_normal"]) ** 2)
-            lambda_normal = torch.mean(torch.sqrt((1 - torch.exp(-out["density"])) ** 2))
-            self.log("train/loss_normal", loss_normal * lambda_normal)
-            loss += loss_normal * lambda_normal * self.cfg.loss.lambda_sparsity
-        
-        loss_sparsity = (out["opacity"] ** 2 + 0.01).sqrt().mean()
-        self.log("train/loss_sparsity", loss_sparsity)
-        loss += loss_sparsity * self.C(self.cfg.loss.lambda_sparsity)
-
-        opacity_clamped = out["opacity"].clamp(1.0e-3, 1.0 - 1.0e-3)
-        loss_opaque = binary_cross_entropy(opacity_clamped, opacity_clamped)
-        self.log("train/loss_opaque", loss_opaque)
-        loss += loss_opaque * self.C(self.cfg.loss.lambda_opaque)
-
-        # z variance loss proposed in HiFA: http://arxiv.org/abs/2305.18766
-        # helps reduce floaters and produce solid geometry
-        loss_z_variance = out["z_variance"][out["opacity"] > 0.5].mean()
-        self.log("train/loss_z_variance", loss_z_variance)
-        loss += loss_z_variance * self.C(self.cfg.loss.lambda_z_variance)
-
         for name, value in self.cfg.loss.items():
             self.log(f"train_params/{name}", self.C(value))
 

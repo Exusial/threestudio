@@ -344,18 +344,29 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         focus = {}
         if self.cfg.focus_mode >= 1:
             # head_mode
-            nose_point, nose_normal = torch.tensor(smpl_mesh.vertices[9120], dtype=torch.float), torch.tensor(smpl_mesh.vertex_normals[9120], dtype=torch.float)
+            nose_point, nose_normal = torch.tensor(smpl_mesh.vertices[8981], dtype=torch.float), torch.tensor(smpl_mesh.vertex_normals[8981], dtype=torch.float)
+            nose_normal = F.normalize(nose_normal, dim=-1)
             center_perturb: Float[Tensor, "B 3"] = (
                 torch.randn(self.cfg.batch_size, 3) * self.cfg.center_perturb
             ) * 0.1
             center = nose_point.unsqueeze(0) + center_perturb
             head_camera_positions = center + nose_normal.unsqueeze(0) * self.cfg.focus_camera_distance
             focus["head"] = {"pos": head_camera_positions, "lookat": -nose_normal}
+        if self.cfg.focus_mode >= 2:
+            # torso mode
+            torso_point, torso_normal = torch.tensor(smpl_mesh.vertices[3855], dtype=torch.float), torch.tensor(smpl_mesh.vertex_normals[3855], dtype=torch.float)
+            nose_normal = F.normalize(torso_normal, dim=-1)
+            center_perturb: Float[Tensor, "B 3"] = (
+                torch.randn(self.cfg.batch_size, 3) * self.cfg.center_perturb
+            ) * 0.1
+            center = nose_point.unsqueeze(0) + center_perturb
+            torso_camera_positions = center + torso_normal.unsqueeze(0) * self.cfg.focus_camera_distance
+            focus["torso"] = {"pos": torso_camera_positions, "lookat": -torso_normal}
         return focus
 
     def generate_directions_map(self, focus, focal_length):
         focus_rays = {}
-        up = torch.tensor([[1.0, 0.0, 0.0]], dtype=torch.float32).repeat(self.cfg.batch_size,1)
+        up = torch.tensor([[-1.0, 0.0, 0.0]], dtype=torch.float32).repeat(self.cfg.batch_size,1)
         for part, part_info in focus.items():
             lookat = part_info["lookat"].unsqueeze(0).repeat(self.cfg.batch_size, 1)
             right: Float[Tensor, "B 3"] = F.normalize(torch.cross(lookat, up), dim=-1)

@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import numpy as np
+import trimesh
+from dataclasses import dataclass, field
+
 import torch
 import torch.nn.functional as F
-import trimesh
 
 import threestudio
+from threestudio.models.geometry.base import (
+    BaseGeometry,
+    BaseExplicitGeometry,
+    contract_to_unisphere,
+)
 from threestudio.utils.ops import dot
 from threestudio.utils.typing import *
-
 
 class Mesh:
     def __init__(
@@ -25,11 +31,6 @@ class Mesh:
         self.extras: Dict[str, Any] = {}
         for k, v in kwargs.items():
             self.add_extra(k, v)
-
-    def export(self, fn="out.ply"): 
-        mesh = trimesh.base.Trimesh(self.v_pos.detach().cpu().numpy(), self.t_pos_idx.detach().cpu().numpy())
-        # mesh.visual.vertex_colors = self._v_rgb.detach().cpu().numpy()
-        mesh.export(fn)
 
     def add_extra(self, k, v) -> None:
         self.extras[k] = v
@@ -312,3 +313,23 @@ class Mesh:
         loss = loss.norm(dim=1)
         loss = loss.mean()
         return loss
+
+@threestudio.register("dlmesh")
+class DlMesh(BaseExplicitGeometry):
+    @dataclass
+    class Config(BaseExplicitGeometry.Config):
+        obj_dir: str = ""
+
+    def isosurface(self):
+        return self
+    
+    def configure(self) -> None:
+        super().configure()
+
+        mesh = trimesh.load(self.cfg.obj_dir)
+        self.v_pos = torch.tensor(mesh.vertices, dtype=torch.float32, device=self.device)
+        self.t_pos_idx = torch.tensor(mesh.faces, dtype=torch.int64, device=self.device)
+        self.mesh = Mesh(self.v_pos, self.t_pos_idx)
+        self.mesh.remove_outlier()
+
+    
