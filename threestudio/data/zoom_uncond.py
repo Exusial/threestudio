@@ -57,7 +57,7 @@ class RandomCameraDataModuleConfig:
     focus_mode: int = 0
     progressive_radius: float = 1.0
     max_steps: int = 30000
-    focus_camera_distance: float = 0.6
+    focus_camera_distance: float = 0.4
     smpl_dir: str = "smpl.obj"
 
 class RandomCameraIterableDataset(IterableDataset, Updateable):
@@ -285,7 +285,7 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
 
         # get focus mode part directions
         focus = self.focus_mode_camera_position(self.smpl_mesh)
-        focus_rays = self.generate_directions_map(focus, focal_length)
+        focus_rays = self.generate_directions_map(focus, focal_length, fovy)
         # rays_d_head = self.project2pixel(c2w, self.head_bbox)
         # rays_d_head[:, :, :, :2] = rays_d_head[:, :, :, :2] / focal_length[:, None, None, None]
         # print(rays_d_head[0,:10])
@@ -364,9 +364,10 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
             focus["torso"] = {"pos": torso_camera_positions, "lookat": -torso_normal}
         return focus
 
-    def generate_directions_map(self, focus, focal_length):
+    def generate_directions_map(self, focus, focal_length, fovy):
         focus_rays = {}
         up = torch.tensor([[-1.0, 0.0, 0.0]], dtype=torch.float32).repeat(self.cfg.batch_size,1)
+        print(focus)
         for part, part_info in focus.items():
             lookat = part_info["lookat"].unsqueeze(0).repeat(self.cfg.batch_size, 1)
             right: Float[Tensor, "B 3"] = F.normalize(torch.cross(lookat, up), dim=-1)
@@ -388,6 +389,13 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
             rays_o, rays_d = get_rays(directions, c2w, keepdim=True)
             focus_rays[f"rays_o_{part}"] = rays_o
             focus_rays[f"rays_d_{part}"] = rays_d
+            proj_mtx: Float[Tensor, "B 4 4"] = get_projection_matrix(
+                fovy, self.width / self.height, 0.1, 1000.0
+            )  # FIXME: hard-coded near and far
+            mvp_mtx: Float[Tensor, "B 4 4"] = get_mvp_matrix(c2w, proj_mtx)
+            focus_rays[f"c2w_{part}"] = mvp_mtx
+            focus_rays[f"camera_positions_{part}"] = part_info["pos"]
+        # exit()
         return focus_rays
 
     def project2pixel(self, c2w, bbox):

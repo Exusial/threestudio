@@ -69,7 +69,7 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
         # this should be saved to state_dict, register as buffer
         self.isosurface_bbox: Float[Tensor, "2 3"]
         self.register_buffer("isosurface_bbox", self.bbox.clone())
-
+        self.sdf_bias = None
         self.isosurface_helper = MarchingTetrahedraHelper(
             self.cfg.isosurface_resolution,
             f"load/tets/{self.cfg.isosurface_resolution}_tets.npz",
@@ -149,10 +149,14 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
         if self.cfg.fix_geometry and self.mesh is not None:
             return self.mesh
         self.particle_index = np.random.randint(self.cfg.n_particles)
-        mesh = self.isosurface_helper(self.sdf[self.particle_index] + self.sdf_bias, self.deformation[self.particle_index])
+        if not self.sdf_bias is None:
+            mesh = self.isosurface_helper(self.sdf[self.particle_index] + self.sdf_bias, self.deformation[self.particle_index])
+        else:
+            mesh = self.isosurface_helper(self.sdf, self.deformation[self.particle_index])
         mesh.v_pos = scale_tensor(
             mesh.v_pos, self.isosurface_helper.points_range, self.isosurface_bbox
         )
+        mesh.v_pos = mesh.v_pos.float()
         if self.cfg.isosurface_remove_outliers:
             mesh = mesh.remove_outlier(self.cfg.isosurface_outlier_n_faces_threshold)
         self.mesh = mesh

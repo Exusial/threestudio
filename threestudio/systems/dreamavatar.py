@@ -23,6 +23,7 @@ class DreamAvatar(BaseLift3DSystem):
         zoomable: int = 0
         part_stage: float = 10000
         fine_stage: float = 10000
+        stage: str = "nerf"
     cfg: Config
 
     def configure(self):
@@ -34,35 +35,49 @@ class DreamAvatar(BaseLift3DSystem):
                 self.cfg.prompt_processor
             )
             self.prompt_utils = self.prompt_processor()
-            # if self.cfg.part_stage > 0:
-            #     self.sds_guidance = threestudio.find(self.cfg.sds_guidance_type)(self.cfg.sds_guidance)
-            # self.renderer.training = True
+            if self.cfg.part_stage >= 0:
+                self.sds_guidance = threestudio.find(self.cfg.sds_guidance_type)(self.cfg.sds_guidance)
+            self.renderer.training = True
         self.head_bbox = zoom_bbox_in_apos()
         self.focus_mode = ["head"]
-        self.stage = "nerf"
+        self.stage = self.cfg.stage
+        self.convert_from = self.cfg.geometry_convert_from
+        if self.stage == "mesh" and self.cfg.use_vsd == 1:
+            params = torch.load(self.convert_from, map_location="cpu")
+            self.load_state_dict(params["state_dict"], strict=False)
 
     def forward(self, batch: Dict[str, Any], training=False) -> Dict[str, Any]:
         if self.stage == "nerf":
             render_out = self.renderer(**batch, render_normal=True)
             part_render_out = None
             if self.cfg.zoomable and training:
-                batch["rays_o"] = batch["rays_o_head"]
-                batch["rays_d"] = batch["rays_d_head"]
-                part_render_out = self.renderer(**batch, render_normal=False)
-            render_dict = {**render_out}
-            if self.cfg.zoomable and training:
-                # todo: add more part factorized process.
-                render_dict["comp_rgb_head"] = part_render_out["comp_rgb"]
+                render_dict = {**render_out}
+                if "rays_o_head" in batch:
+                    batch["rays_o"] = batch["rays_o_head"]
+                    batch["rays_d"] = batch["rays_d_head"]
+                    part_render_out = self.renderer(**batch, render_normal=False)
+                    render_dict["comp_rgb_head"] = part_render_out["comp_rgb"]
+                if "rays_o_torso" in batch:
+                    batch["rays_o"] = batch["rays_o_torso"]
+                    batch["rays_d"] = batch["rays_d_torso"]
+                    part_render_out = self.renderer(**batch, render_normal=False)
+                    render_dict["comp_rgb_torso"] = part_render_out["comp_rgb"]
         else:
             render_out = self.renderer(**batch, render_normal=True)
+            render_out["comp_rgb"] = render_out["comp_rgb"]
             part_render_out = None
-            if self.cfg.zoomable and training:
-                batch["rays_o"] = batch["rays_o_head"]
-                batch["rays_d"] = batch["rays_d_head"]
-                part_render_out = self.renderer(**batch, render_normal=False)
             render_dict = {**render_out}
             if self.cfg.zoomable and training:
-                render_dict["comp_rgb_head"] = part_render_out["comp_rgb"]
+                if "rays_o_head" in batch:
+                    batch["mvp_mtx"] = batch["c2w_head"]
+                    batch["camera_positions"] = batch["camera_positions_head"]
+                    part_render_out = self.renderer(**batch, render_normal=True)
+                    render_dict["comp_rgb_head"] = part_render_out["comp_rgb"]
+                if "rays_o_torso" in batch:
+                    batch["mvp_mtx"] = batch["c2w_torso"]
+                    batch["camera_positions"] = batch["camera_positions_torso"]
+                    part_render_out = self.renderer(**batch, render_normal=True)
+                    render_dict["comp_rgb_torso"] = part_render_out["comp_rgb"]
         return render_dict
 
     def on_fit_start(self) -> None:
@@ -89,29 +104,38 @@ class DreamAvatar(BaseLift3DSystem):
         guidance_out = self.guidance(
             out["comp_rgb"], self.prompt_utils, **batch, rgb_as_latents=False
         )
-        mesh = self.geometry.isosurface()
-        mesh.export()
-        exit()
+        # mesh = self.geometry.isosurface()
+        # mesh.export()
+        # exit()
         for name, value in guidance_out.items():
             self.log(f"train/{name}", value)
             if name.startswith("loss_"):
                 loss += value * self.C(self.cfg.loss[name.replace("loss_", "lambda_")])
         if self.cfg.zoomable and batch_idx >= self.cfg.part_stage:
             # todo: add more part factorized process.
-            self.prompt_processor.prompt = self.prompt_processor.preprocess_prompt("headshot of " + self.prompt_processor.part_prompt)
-            with torch.no_grad():
-                part_guidance_out = self.guidance(
-                    out["comp_rgb_head"], self.prompt_utils, **batch, rgb_as_latents=False
-                )
-            # debug head part?
-            cv2.imwrite("body.png", np.rint(out["comp_rgb"][0].detach().cpu().numpy() * 255))
-            cv2.imwrite("head.png", np.rint(out["comp_rgb_head"][0].detach().cpu().numpy() * 255))
-            
+            if "comp_rgb_head" in out:
+                self.prompt_processor.prompt = self.prompt_processor.preprocess_prompt("headshot of " + self.prompt_processor.part_prompt)
+                with torch.no_grad():
+                    part_guidance_out = self.guidance(
+                        out["comp_rgb_head"], self.prompt_utils, **batch, rgb_as_latents=False
+                    )
+                # debug head part?
+                cv2.imwrite("body.png", np.rint(out["comp_rgb"][0].detach().cpu().numpy() * 255))
+                cv2.imwrite("head.png", np.rint(out["comp_rgb_head"][0].detach().cpu().numpy() * 255))
+            if "comp_rgb_torso" in out:
+                self.prompt_processor.prompt = self.prompt_processor.preprocess_prompt("torso of " + self.prompt_processor.part_prompt)
+                with torch.no_grad():
+                    part_guidance_out = self.guidance(
+                        out["comp_rgb_torso"], self.prompt_utils, **batch, rgb_as_latents=False
+                    )
+                # debug torso part?
+                cv2.imwrite("body.png", np.rint(out["comp_rgb"][0].detach().cpu().numpy() * 255))
+                cv2.imwrite("torso.png", np.rint(out["comp_rgb_torso"][0].detach().cpu().numpy() * 255))
             for name, value in part_guidance_out.items():
                 self.log(f"train/part_{name}", value)
                 if name.startswith("loss_"):
                     loss += value * self.C(self.cfg.loss[name.replace("loss_", "lambda_")]) * 0.2
-
+        
         if self.stage == "nerf":
             # if not self.cfg.use_vsd:
             #     if "normal" not in out:
@@ -137,18 +161,21 @@ class DreamAvatar(BaseLift3DSystem):
             self.log("train/loss_z_variance", loss_z_variance)
             loss += loss_z_variance * self.C(self.cfg.loss.lambda_z_variance)
         else:
-            loss_normal_consistency = self.geometry.normal_consistency()
+            loss_normal_consistency = out["mesh"].normal_consistency()
             self.log("train/loss_normal_consistency", loss_normal_consistency)
             loss += loss_normal_consistency * self.C(
                 self.cfg.loss.lambda_normal_consistency
             )
-
-            if self.C(self.cfg.loss.lambda_laplacian_smoothness) > 0:
-                loss_laplacian_smoothness = out["mesh"].laplacian()
-                self.log("train/loss_laplacian_smoothness", loss_laplacian_smoothness)
-                loss += loss_laplacian_smoothness * self.C(
-                    self.cfg.loss.lambda_laplacian_smoothness
-                )
+            
+            # if self.C(self.cfg.loss.lambda_laplacian_smoothness) > 0:
+            #     loss_laplacian_smoothness = out["mesh"].laplacian()
+            #     self.log("train/loss_laplacian_smoothness", loss_laplacian_smoothness)
+            #     loss += loss_laplacian_smoothness * self.C(
+            #         self.cfg.loss.lambda_laplacian_smoothness
+            #     )
+            cv2.imwrite("body.png", np.rint(out["comp_rgb"][0].detach().cpu().numpy() * 255))
+            pass
+    
         for name, value in self.cfg.loss.items():
             self.log(f"train_params/{name}", self.C(value))
 

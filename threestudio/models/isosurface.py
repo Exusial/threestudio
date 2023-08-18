@@ -15,6 +15,53 @@ class IsosurfaceHelper(nn.Module):
     def grid_vertices(self) -> Float[Tensor, "N 3"]:
         raise NotImplementedError
 
+class DualContouringHelper(IsosurfaceHelper):
+    def __init__(self, resolution: int) -> None:
+        super().__init__()
+        from threestudio.models.ops_utils import dual_contouring_undc
+        self.dc_func = dual_contouring_undc
+        self.resolution = resolution
+        self._grid_vertices = None
+        self._dummy: Float[Tensor, "..."]
+        self.register_buffer(
+            "_dummy", torch.zeros(0, dtype=torch.float32), persistent=False
+        )
+
+    @property
+    def grid_vertices(self) -> Float[Tensor, "N3 3"]:
+        if self._grid_vertices is None:
+            # keep the vertices on CPU so that we can support very large resolution
+            x, y, z = (
+                torch.linspace(*self.points_range, self.resolution),
+                torch.linspace(*self.points_range, self.resolution),
+                torch.linspace(*self.points_range, self.resolution),
+            )
+            x, y, z = torch.meshgrid(x, y, z, indexing="ij")
+            verts = torch.cat(
+                [x.reshape(-1, 1), y.reshape(-1, 1), z.reshape(-1, 1)], dim=-1
+            ).reshape(-1, 3)
+            self._grid_vertices = verts
+        return self._grid_vertices
+
+    def forward(
+        self,
+        level: Float[Tensor, "N3 1"],
+        deformation: Optional[Float[Tensor, "N3 3"]] = None,
+    ) -> Mesh:
+        if deformation is not None:
+            threestudio.warn(
+                f"{self.__class__.__name__} does not support deformation. Ignoring."
+            )
+        level = -level.view(self.resolution, self.resolution, self.resolution)
+        v_pos, t_pos_idx = self.dc_func(
+            level.detach(), 15.0
+        )  # transform to numpy
+        v_pos, t_pos_idx = (
+            torch.from_numpy(v_pos).float().to(self._dummy.device),
+            torch.from_numpy(t_pos_idx.astype(np.int64)).long().to(self._dummy.device),
+        )  # transform back to torch tensor on CUDA
+        v_pos = v_pos / (self.resolution - 1.0)
+        return Mesh(v_pos=v_pos, t_pos_idx=t_pos_idx)
 
 class MarchingCubeCPUHelper(IsosurfaceHelper):
     def __init__(self, resolution: int) -> None:
@@ -56,7 +103,7 @@ class MarchingCubeCPUHelper(IsosurfaceHelper):
             )
         level = -level.view(self.resolution, self.resolution, self.resolution)
         v_pos, t_pos_idx = self.mc_func(
-            level.detach().cpu().numpy(), 0.0
+            level.detach().cpu().numpy(), 0.5
         )  # transform to numpy
         v_pos, t_pos_idx = (
             torch.from_numpy(v_pos).float().to(self._dummy.device),
@@ -64,7 +111,6 @@ class MarchingCubeCPUHelper(IsosurfaceHelper):
         )  # transform back to torch tensor on CUDA
         v_pos = v_pos / (self.resolution - 1.0)
         return Mesh(v_pos=v_pos, t_pos_idx=t_pos_idx)
-
 
 class MarchingTetrahedraHelper(IsosurfaceHelper):
     def __init__(self, resolution: int, tets_path: str):
@@ -223,7 +269,6 @@ class MarchingTetrahedraHelper(IsosurfaceHelper):
             ),
             dim=0,
         )
-
         return verts, faces
 
     def forward(
@@ -237,9 +282,7 @@ class MarchingTetrahedraHelper(IsosurfaceHelper):
             )
         else:
             grid_vertices = self.grid_vertices
-
         v_pos, t_pos_idx = self._forward(grid_vertices, level, self.indices)
-
         mesh = Mesh(
             v_pos=v_pos,
             t_pos_idx=t_pos_idx,

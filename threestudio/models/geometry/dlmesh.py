@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import trimesh
+import pymeshlab
 from dataclasses import dataclass, field
 
 import torch
@@ -108,6 +109,7 @@ class Mesh:
     def v_nrm(self):
         if self._v_nrm is None:
             self._v_nrm = self._compute_vertex_normal()
+            self._v_nrm.required_grad = True
         return self._v_nrm
 
     @property
@@ -309,6 +311,7 @@ class Mesh:
     def laplacian(self) -> Float[Tensor, ""]:
         with torch.no_grad():
             L = self._laplacian_uniform()
+        print(self.v_pos.dtype, L.dtype, type(L), type(self.v_pos))
         loss = L.mm(self.v_pos)
         loss = loss.norm(dim=1)
         loss = loss.mean()
@@ -319,17 +322,36 @@ class DlMesh(BaseExplicitGeometry):
     @dataclass
     class Config(BaseExplicitGeometry.Config):
         obj_dir: str = ""
+        outlier_n_faces_threshold: float = 0.01
 
     def isosurface(self):
-        return self
+        return self.mesh
     
+    def normal_consistency(self):
+        return self.mesh.normal_consistency()
+    
+    def laplacian(self):
+        return self.mesh.laplacian()
+
     def configure(self) -> None:
         super().configure()
 
-        mesh = trimesh.load(self.cfg.obj_dir)
+        mesh = trimesh.load_mesh(self.cfg.obj_dir)
+        # mesh = pymeshlab.load_new_mesh(self.cfg.obj_dir)
         self.v_pos = torch.tensor(mesh.vertices, dtype=torch.float32, device=self.device)
         self.t_pos_idx = torch.tensor(mesh.faces, dtype=torch.int64, device=self.device)
+        # self.v_pos.required_grad = True
+        # self.v_pos = torch.nn.Parameter(self.v_pos)
+        # h = self.v_pos.register_hook(lambda grad: grad * 1e-3)
         self.mesh = Mesh(self.v_pos, self.t_pos_idx)
-        self.mesh.remove_outlier()
+        if mesh.visual.vertex_colors is not None:
+            self.v_rgb = torch.tensor(
+                mesh.visual.vertex_colors, dtype=torch.float32, device=self.device
+            )[:,:3].contiguous()
+            self.v_rgb.required_grad = True
+            self.v_rgb = torch.nn.Parameter(self.v_rgb)
+            self.mesh._v_rgb = self.v_rgb
+        self.mesh.remove_outlier(self.cfg.outlier_n_faces_threshold)
 
-    
+    def forward(self, positions, output_normal=False):
+        pass

@@ -10,6 +10,7 @@ from threestudio.models.isosurface import (
     IsosurfaceHelper,
     MarchingCubeCPUHelper,
     MarchingTetrahedraHelper,
+    DualContouringHelper,
 )
 from threestudio.models.mesh import Mesh
 from threestudio.utils.base import BaseModule
@@ -88,6 +89,10 @@ class BaseImplicitGeometry(BaseGeometry):
                 self.isosurface_helper = MarchingCubeCPUHelper(
                     self.cfg.isosurface_resolution
                 ).to(self.device)
+            elif self.cfg.isosurface_method == "ndc-cpu":
+                self.isosurface_helper = DualContouringHelper(
+                    self.cfg.isosurface_resolution
+                ).to(self.device)
             elif self.cfg.isosurface_method == "mt":
                 self.isosurface_helper = MarchingTetrahedraHelper(
                     self.cfg.isosurface_resolution,
@@ -132,7 +137,7 @@ class BaseImplicitGeometry(BaseGeometry):
             return field, deformation
 
         assert self.isosurface_helper is not None
-
+        print(self.isosurface_helper.grid_vertices)
         field, deformation = chunk_batch(
             batch_func,
             self.cfg.isosurface_chunk,

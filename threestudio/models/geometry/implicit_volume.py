@@ -14,6 +14,7 @@ from threestudio.models.geometry.base import (
 from threestudio.models.networks import get_encoding, get_mlp
 from threestudio.utils.ops import get_activation
 from threestudio.utils.typing import *
+from threestudio.models.mesh import Mesh
 
 import pytorch_volumetric as pv
 import trimesh, pysdf
@@ -226,6 +227,7 @@ class ImplicitVolume(BaseImplicitGeometry):
                 f"{self.__class__.__name__} does not support isosurface_deformable_grid. Ignoring."
             )
         density = self.forward_density(points)
+        density = torch.clamp(density, max=50.0)
         return density, None
 
     def forward_level(
@@ -249,6 +251,29 @@ class ImplicitVolume(BaseImplicitGeometry):
             }
         )
         return out
+
+    def isosurface(self) -> Mesh:
+        if not self.cfg.isosurface:
+            raise NotImplementedError(
+                "Isosurface is not enabled in the current configuration"
+            )
+        self._initilize_isosurface_helper()
+        if self.cfg.density_bias == "smpl":
+            bbox = torch.tensor(np.array([self.mesh.vertices.min(axis=0)-0.45, self.mesh.vertices.max(axis=0)+0.45])).to(self.bbox.device)
+        else:
+            bbox = self.bbox
+        if self.cfg.isosurface_coarse_to_fine and not self.cfg.density_bias == "smpl":
+            threestudio.debug("First run isosurface to get a tight bounding box ...")
+            with torch.no_grad():
+                mesh_coarse = self._isosurface(bbox)
+            vmin, vmax = mesh_coarse.v_pos.amin(dim=0), mesh_coarse.v_pos.amax(dim=0)
+            vmin_ = (vmin - (vmax - vmin) * 0.1).max(bbox[0])
+            vmax_ = (vmax + (vmax - vmin) * 0.1).min(bbox[1])
+            threestudio.debug("Run isosurface again with the tight bounding box ...")
+            mesh = self._isosurface(torch.stack([vmin_, vmax_], dim=0), fine_stage=True)
+        else:
+            mesh = self._isosurface(bbox)
+        return mesh
 
     @staticmethod
     @torch.no_grad()

@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import threestudio
 from threestudio.models.background.base import BaseBackground
 from threestudio.models.geometry.base import BaseImplicitGeometry
+from threestudio.models.geometry.dlmesh import DlMesh
 from threestudio.models.materials.base import BaseMaterial
 from threestudio.models.renderers.base import Rasterizer, VolumeRenderer
 from threestudio.utils.misc import get_device
@@ -18,7 +19,7 @@ from threestudio.utils.typing import *
 class NVDiffRasterizer(Rasterizer):
     @dataclass
     class Config(VolumeRenderer.Config):
-        context_type: str = "gl"
+        context_type: str = "cuda"
 
     cfg: Config
 
@@ -44,7 +45,6 @@ class NVDiffRasterizer(Rasterizer):
     ) -> Dict[str, Any]:
         batch_size = mvp_mtx.shape[0]
         mesh = self.geometry.isosurface()
-
         v_pos_clip: Float[Tensor, "B Nv 4"] = self.ctx.vertex_transform(
             mesh.v_pos, mvp_mtx
         )
@@ -67,31 +67,34 @@ class NVDiffRasterizer(Rasterizer):
 
         if render_rgb:
             selector = mask[..., 0]
+            if not isinstance(self.geometry, DlMesh):
+                gb_pos, _ = self.ctx.interpolate_one(mesh.v_pos, rast, mesh.t_pos_idx)
+                gb_viewdirs = F.normalize(
+                    gb_pos - camera_positions[:, None, None, :], dim=-1
+                )
+                gb_light_positions = light_positions[:, None, None, :].expand(
+                    -1, height, width, -1
+                )
 
-            gb_pos, _ = self.ctx.interpolate_one(mesh.v_pos, rast, mesh.t_pos_idx)
-            gb_viewdirs = F.normalize(
-                gb_pos - camera_positions[:, None, None, :], dim=-1
-            )
-            gb_light_positions = light_positions[:, None, None, :].expand(
-                -1, height, width, -1
-            )
+                positions = gb_pos[selector]
+                geo_out = self.geometry(positions, output_normal=False)
+                rgb_fg = self.material(
+                    viewdirs=gb_viewdirs[selector],
+                    positions=positions,
+                    light_positions=gb_light_positions[selector],
+                    shading_normal=gb_normal[selector],
+                    **geo_out
+                )
+                gb_rgb_fg = torch.zeros(batch_size, height, width, 3).to(rgb_fg)
+                gb_rgb_fg[selector] = rgb_fg
 
-            positions = gb_pos[selector]
-            geo_out = self.geometry(positions, output_normal=False)
-            rgb_fg = self.material(
-                viewdirs=gb_viewdirs[selector],
-                positions=positions,
-                light_positions=gb_light_positions[selector],
-                shading_normal=gb_normal[selector],
-                **geo_out
-            )
-            gb_rgb_fg = torch.zeros(batch_size, height, width, 3).to(rgb_fg)
-            gb_rgb_fg[selector] = rgb_fg
+                gb_rgb_bg = self.background(dirs=gb_viewdirs)
+                gb_rgb = torch.lerp(gb_rgb_bg, gb_rgb_fg, mask.float())
+                gb_rgb_aa = self.ctx.antialias(gb_rgb, rast, v_pos_clip, mesh.t_pos_idx)
 
-            gb_rgb_bg = self.background(dirs=gb_viewdirs)
-            gb_rgb = torch.lerp(gb_rgb_bg, gb_rgb_fg, mask.float())
-            gb_rgb_aa = self.ctx.antialias(gb_rgb, rast, v_pos_clip, mesh.t_pos_idx)
-
-            out.update({"comp_rgb": gb_rgb_aa})
-
+                out.update({"comp_rgb": gb_rgb_aa})
+            else:
+                gb_rgb = self.ctx.interpolate_one(mesh.v_rgb, rast, mesh.t_pos_idx)[0]
+                gb_rgb_aa = self.ctx.antialias(gb_rgb, rast, v_pos_clip, mesh.t_pos_idx)
+                out.update({"comp_rgb": gb_rgb_aa})
         return out
