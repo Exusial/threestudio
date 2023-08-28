@@ -191,3 +191,4 @@ wandb/
 *.png
 *.ply
 *.so
+*.pyx
