@@ -3,6 +3,13 @@ import math
 import random
 from dataclasses import dataclass, field
 import trimesh
+import os 
+import pyrender
+from pyrender.constants import RenderFlags
+
+import numpy as np
+import cv2
+os.environ["PYOPENGL_PLATFORM"] = "egl"
 
 import pytorch_lightning as pl
 import torch
@@ -23,6 +30,7 @@ from threestudio.utils.ops import (
 from threestudio.utils.typing import *
 
 from threestudio.utils.smpl_utils import zoom_bbox_in_apos, check_bbox
+
 
 @dataclass
 class RandomCameraDataModuleConfig:
@@ -57,7 +65,7 @@ class RandomCameraDataModuleConfig:
     focus_mode: int = 0
     progressive_radius: float = 1.0
     max_steps: int = 30000
-    focus_camera_distance: float = 0.4
+    focus_camera_distance: float = 0.6
     smpl_dir: str = "smpl.obj"
 
 class RandomCameraIterableDataset(IterableDataset, Updateable):
@@ -91,9 +99,27 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         self.directions_unit_focal = self.directions_unit_focals[0]
         self.head_bbox = torch.tensor(zoom_bbox_in_apos())
         self.smpl_mesh = trimesh.load(self.cfg.smpl_dir)
+        self.colors_dict = {
+            'red': np.array([0.5, 0.2, 0.2]),
+            'pink': np.array([0.7, 0.5, 0.5]),
+            'neutral': np.array([0.7, 0.7, 0.6]),
+            # 'purple': np.array([0.5, 0.5, 0.7]),
+            'purple': np.array([0.55, 0.4, 0.9]),
+            'green': np.array([0.5, 0.55, 0.3]),
+            'sky': np.array([0.3, 0.5, 0.55]),
+            'white': np.array([1.0, 0.98, 0.94]),
+        }
+        self.init_pyrender(self.smpl_mesh)
 
     def update_step(self, epoch: int, global_step: int, on_load_weights: bool = False):
         size_ind = bisect.bisect_right(self.resolution_milestones, global_step) - 1
+        if self.height != self.heights[size_ind]:
+            self.renderer.delete()
+            self.renderer = pyrender.OffscreenRenderer(
+                viewport_width=self.widths[size_ind],
+                viewport_height=self.heights[size_ind],
+                point_size=1.0
+            )
         self.height = self.heights[size_ind]
         self.width = self.widths[size_ind]
         self.directions_unit_focal = self.directions_unit_focals[size_ind]
@@ -285,7 +311,7 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
 
         # get focus mode part directions
         focus = self.focus_mode_camera_position(self.smpl_mesh)
-        focus_rays = self.generate_directions_map(focus, focal_length, fovy)
+        focus_rays = self.generate_directions_map(focus, focal_length)
         # rays_d_head = self.project2pixel(c2w, self.head_bbox)
         # rays_d_head[:, :, :, :2] = rays_d_head[:, :, :, :2] / focal_length[:, None, None, None]
         # print(rays_d_head[0,:10])
@@ -297,6 +323,8 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
             fovy, self.width / self.height, 0.1, 1000.0
         )  # FIXME: hard-coded near and far
         mvp_mtx: Float[Tensor, "B 4 4"] = get_mvp_matrix(c2w, proj_mtx)
+
+        smpl_map = self.generate_view_smpl_map(c2w, fovy)
 
         batch =  {
             "rays_o": rays_o,
@@ -310,6 +338,7 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
             "camera_distances": camera_distances,
             "height": self.height,
             "width": self.width,
+            "rendered_smpl": smpl_map,
         }
         for k, v in focus_rays.items():
             batch[k] = v
@@ -339,6 +368,49 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         'RHeel':  		8635
     }
 
+    def init_pyrender(self, smpl_mesh):
+        color = self.colors_dict['purple']
+        material = pyrender.MetallicRoughnessMaterial(
+            metallicFactor=0.2,
+            roughnessFactor=0.6,
+            baseColorFactor=(color[0], color[1], color[2], 1.0)
+        )
+        self.scene = pyrender.Scene()
+        light = pyrender.PointLight(color=np.array([1.0, 1.0, 1.0]) * 0.2, intensity=1)
+
+        yrot = np.radians(120) # angle of lights
+
+        light_pose = np.eye(4)
+        light_pose[:3, 3] = [0, -1, 1]
+        self.scene.add(light, pose=light_pose)
+
+        light_pose[:3, 3] = [0, 1, 1]
+        self.scene.add(light, pose=light_pose)
+
+        light_pose[:3, 3] = [1, 1, 2]
+        self.scene.add(light, pose=light_pose)
+        mesh = pyrender.Mesh.from_trimesh(smpl_mesh, material=material)
+        mesh_node = self.scene.add(mesh, 'mesh')
+        h, w = self.height, self.width
+        self.renderer = pyrender.OffscreenRenderer(
+            viewport_width=w,
+            viewport_height=h,
+            point_size=1.0
+        )
+        
+    def generate_view_smpl_map(self, mvp_mtx, fovy):
+        h, w = self.height, self.width
+        focal_length = 0.5 * h / np.tan(0.5 * fovy)
+        camera = pyrender.IntrinsicsCamera(fx=focal_length, fy=focal_length,
+                                           cx=w/2., cy=h/2.)
+        mvp_mtx = mvp_mtx[0][[0,1,2,3]]
+        cam_node = self.scene.add(camera, pose=mvp_mtx.numpy())
+        render_flags = RenderFlags.RGBA | RenderFlags.SHADOWS_SPOT
+        rgb, _ = self.renderer.render(self.scene, flags=render_flags)
+        self.scene.remove_node(cam_node)
+        # cv2.imwrite("smpl222.png", rgb)
+        return rgb
+
     def focus_mode_camera_position(self, smpl_mesh):
         # todo: test nodes here.
         focus = {}
@@ -364,10 +436,9 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
             focus["torso"] = {"pos": torso_camera_positions, "lookat": -torso_normal}
         return focus
 
-    def generate_directions_map(self, focus, focal_length, fovy):
+    def generate_directions_map(self, focus, focal_length):
         focus_rays = {}
         up = torch.tensor([[-1.0, 0.0, 0.0]], dtype=torch.float32).repeat(self.cfg.batch_size,1)
-        print(focus)
         for part, part_info in focus.items():
             lookat = part_info["lookat"].unsqueeze(0).repeat(self.cfg.batch_size, 1)
             right: Float[Tensor, "B 3"] = F.normalize(torch.cross(lookat, up), dim=-1)
@@ -389,13 +460,6 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
             rays_o, rays_d = get_rays(directions, c2w, keepdim=True)
             focus_rays[f"rays_o_{part}"] = rays_o
             focus_rays[f"rays_d_{part}"] = rays_d
-            proj_mtx: Float[Tensor, "B 4 4"] = get_projection_matrix(
-                fovy, self.width / self.height, 0.1, 1000.0
-            )  # FIXME: hard-coded near and far
-            mvp_mtx: Float[Tensor, "B 4 4"] = get_mvp_matrix(c2w, proj_mtx)
-            focus_rays[f"c2w_{part}"] = mvp_mtx
-            focus_rays[f"camera_positions_{part}"] = part_info["pos"]
-        # exit()
         return focus_rays
 
     def project2pixel(self, c2w, bbox):
