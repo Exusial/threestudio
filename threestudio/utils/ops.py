@@ -8,6 +8,7 @@ from igl import fast_winding_number_for_meshes, point_mesh_squared_distance, rea
 from torch.autograd import Function
 from torch.cuda.amp import custom_bwd, custom_fwd
 
+import threestudio
 from threestudio.utils.typing import *
 
 
@@ -121,7 +122,8 @@ def chunk_batch(func: Callable, chunk_size: int, *args, **kwargs) -> Any:
     ), "No tensor found in args or kwargs, cannot determine batch size."
     out = defaultdict(list)
     out_type = None
-    for i in range(0, B, chunk_size):
+    # max(1, B) to support B == 0
+    for i in range(0, max(1, B), chunk_size):
         out_chunk = func(
             *[
                 arg[i : i + chunk_size] if isinstance(arg, torch.Tensor) else arg
@@ -437,3 +439,12 @@ def perpendicular_component(x: Float[Tensor, "B C H W"], y: Float[Tensor, "B C H
         ).view(-1, 1, 1, 1)
         * y
     )
+
+
+def validate_empty_rays(ray_indices, t_start, t_end):
+    if ray_indices.nelement() == 0:
+        threestudio.warn("Empty rays_indices!")
+        ray_indices = torch.LongTensor([0]).to(ray_indices)
+        t_start = torch.Tensor([0]).to(ray_indices)
+        t_end = torch.Tensor([0]).to(ray_indices)
+    return ray_indices, t_start, t_end

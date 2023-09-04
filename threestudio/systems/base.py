@@ -2,11 +2,16 @@ import os
 from dataclasses import dataclass, field
 
 import pytorch_lightning as pl
+import torch.nn.functional as F
 
 import threestudio
 from threestudio.models.exporters.base import Exporter, ExporterOutput
 from threestudio.systems.utils import parse_optimizer, parse_scheduler
-from threestudio.utils.base import Updateable, update_if_possible
+from threestudio.utils.base import (
+    Updateable,
+    update_end_if_possible,
+    update_if_possible,
+)
 from threestudio.utils.config import parse_structured
 from threestudio.utils.misc import C, cleanup, get_device, load_module_weights
 from threestudio.utils.saving import SaverMixin
@@ -106,7 +111,19 @@ class BaseSystem(pl.LightningModule, Updateable, SaverMixin):
     def validation_step(self, batch, batch_idx):
         raise NotImplementedError
 
+    def on_train_batch_end(self, outputs, batch, batch_idx):
+        self.dataset = self.trainer.train_dataloader.dataset
+        update_end_if_possible(
+            self.dataset, self.true_current_epoch, self.true_global_step
+        )
+        self.do_update_step_end(self.true_current_epoch, self.true_global_step)
+
     def on_validation_batch_end(self, outputs, batch, batch_idx):
+        self.dataset = self.trainer.val_dataloaders.dataset
+        update_end_if_possible(
+            self.dataset, self.true_current_epoch, self.true_global_step
+        )
+        self.do_update_step_end(self.true_current_epoch, self.true_global_step)
         if self.cfg.cleanup_after_validation_step:
             # cleanup to save vram
             cleanup()
@@ -118,6 +135,11 @@ class BaseSystem(pl.LightningModule, Updateable, SaverMixin):
         raise NotImplementedError
 
     def on_test_batch_end(self, outputs, batch, batch_idx):
+        self.dataset = self.trainer.test_dataloaders.dataset
+        update_end_if_possible(
+            self.dataset, self.true_current_epoch, self.true_global_step
+        )
+        self.do_update_step_end(self.true_current_epoch, self.true_global_step)
         if self.cfg.cleanup_after_test_step:
             # cleanup to save vram
             cleanup()
@@ -129,6 +151,11 @@ class BaseSystem(pl.LightningModule, Updateable, SaverMixin):
         raise NotImplementedError
 
     def on_predict_batch_end(self, outputs, batch, batch_idx):
+        self.dataset = self.trainer.predict_dataloaders.dataset
+        update_end_if_possible(
+            self.dataset, self.true_current_epoch, self.true_global_step
+        )
+        self.do_update_step_end(self.true_current_epoch, self.true_global_step)
         if self.cfg.cleanup_after_test_step:
             # cleanup to save vram
             cleanup()
@@ -305,3 +332,63 @@ class BaseLift3DSystem(BaseSystem):
     def on_predict_end(self) -> None:
         if self._save_dir is not None:
             threestudio.info(f"Export assets saved to {self._save_dir}")
+
+    def guidance_evaluation_save(self, comp_rgb, guidance_eval_out):
+        B, size = comp_rgb.shape[:2]
+        resize = lambda x: F.interpolate(
+            x.permute(0, 3, 1, 2), (size, size), mode="bilinear", align_corners=False
+        ).permute(0, 2, 3, 1)
+        filename = f"it{self.true_global_step}-train.png"
+
+        def merge12(x):
+            return x.reshape(-1, *x.shape[2:])
+
+        self.save_image_grid(
+            filename,
+            [
+                {
+                    "type": "rgb",
+                    "img": merge12(comp_rgb),
+                    "kwargs": {"data_format": "HWC"},
+                },
+            ]
+            + (
+                [
+                    {
+                        "type": "rgb",
+                        "img": merge12(resize(guidance_eval_out["imgs_noisy"])),
+                        "kwargs": {"data_format": "HWC"},
+                    }
+                ]
+            )
+            + (
+                [
+                    {
+                        "type": "rgb",
+                        "img": merge12(resize(guidance_eval_out["imgs_1step"])),
+                        "kwargs": {"data_format": "HWC"},
+                    }
+                ]
+            )
+            + (
+                [
+                    {
+                        "type": "rgb",
+                        "img": merge12(resize(guidance_eval_out["imgs_1orig"])),
+                        "kwargs": {"data_format": "HWC"},
+                    }
+                ]
+            )
+            + (
+                [
+                    {
+                        "type": "rgb",
+                        "img": merge12(resize(guidance_eval_out["imgs_final"])),
+                        "kwargs": {"data_format": "HWC"},
+                    }
+                ]
+            ),
+            name="train_step",
+            step=self.true_global_step,
+            texts=guidance_eval_out["texts"],
+        )

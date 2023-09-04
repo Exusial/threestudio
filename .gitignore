@@ -179,9 +179,12 @@ pyrightconfig.json
 .threestudio_cache/
 outputs/
 smplx/
+outputs-gradio/
 
 # pretrained model weights
 *.ckpt
+*.pt
+*.pth
 
 # wandb
 wandb/
@@ -192,3 +195,4 @@ wandb/
 *.ply
 *.so
 *.pyx
+load/tets/256_tets.npz

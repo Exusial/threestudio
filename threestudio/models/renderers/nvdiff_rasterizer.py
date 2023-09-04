@@ -39,7 +39,6 @@ class NVDiffRasterizer(Rasterizer):
         light_positions: Float[Tensor, "B 3"],
         height: int,
         width: int,
-        render_normal: bool = True,
         render_rgb: bool = True,
         **kwargs
     ) -> Dict[str, Any]:
@@ -54,47 +53,59 @@ class NVDiffRasterizer(Rasterizer):
 
         out = {"opacity": mask_aa, "mesh": mesh}
 
-        if render_normal:
-            gb_normal, _ = self.ctx.interpolate_one(mesh.v_nrm, rast, mesh.t_pos_idx)
-            gb_normal = F.normalize(gb_normal, dim=-1)
-            gb_normal_aa = torch.lerp(
-                torch.zeros_like(gb_normal), (gb_normal + 1.0) / 2.0, mask.float()
-            )
-            gb_normal_aa = self.ctx.antialias(
-                gb_normal_aa, rast, v_pos_clip, mesh.t_pos_idx
-            )
-            out.update({"comp_normal": gb_normal_aa})  # in [0, 1]
+        gb_normal, _ = self.ctx.interpolate_one(mesh.v_nrm, rast, mesh.t_pos_idx)
+        gb_normal = F.normalize(gb_normal, dim=-1)
+        gb_normal_aa = torch.lerp(
+            torch.zeros_like(gb_normal), (gb_normal + 1.0) / 2.0, mask.float()
+        )
+        gb_normal_aa = self.ctx.antialias(
+            gb_normal_aa, rast, v_pos_clip, mesh.t_pos_idx
+        )
+        out.update({"comp_normal": gb_normal_aa})  # in [0, 1]
+
+        # TODO: make it clear whether to compute the normal, now we compute it in all cases
+        # consider using: require_normal_computation = render_normal or (render_rgb and material.requires_normal)
+        # or
+        # render_normal = render_normal or (render_rgb and material.requires_normal)
 
         if render_rgb:
             selector = mask[..., 0]
-            if not isinstance(self.geometry, DlMesh):
-                gb_pos, _ = self.ctx.interpolate_one(mesh.v_pos, rast, mesh.t_pos_idx)
-                gb_viewdirs = F.normalize(
-                    gb_pos - camera_positions[:, None, None, :], dim=-1
-                )
-                gb_light_positions = light_positions[:, None, None, :].expand(
-                    -1, height, width, -1
-                )
 
-                positions = gb_pos[selector]
-                geo_out = self.geometry(positions, output_normal=False)
-                rgb_fg = self.material(
-                    viewdirs=gb_viewdirs[selector],
-                    positions=positions,
-                    light_positions=gb_light_positions[selector],
-                    shading_normal=gb_normal[selector],
-                    **geo_out
+            gb_pos, _ = self.ctx.interpolate_one(mesh.v_pos, rast, mesh.t_pos_idx)
+            gb_viewdirs = F.normalize(
+                gb_pos - camera_positions[:, None, None, :], dim=-1
+            )
+            gb_light_positions = light_positions[:, None, None, :].expand(
+                -1, height, width, -1
+            )
+
+            positions = gb_pos[selector]
+            geo_out = self.geometry(positions, output_normal=False)
+
+            extra_geo_info = {}
+            if self.material.requires_normal:
+                extra_geo_info["shading_normal"] = gb_normal[selector]
+            if self.material.requires_tangent:
+                gb_tangent, _ = self.ctx.interpolate_one(
+                    mesh.v_tng, rast, mesh.t_pos_idx
                 )
-                gb_rgb_fg = torch.zeros(batch_size, height, width, 3).to(rgb_fg)
-                gb_rgb_fg[selector] = rgb_fg
+                gb_tangent = F.normalize(gb_tangent, dim=-1)
+                extra_geo_info["tangent"] = gb_tangent[selector]
 
-                gb_rgb_bg = self.background(dirs=gb_viewdirs)
-                gb_rgb = torch.lerp(gb_rgb_bg, gb_rgb_fg, mask.float())
-                gb_rgb_aa = self.ctx.antialias(gb_rgb, rast, v_pos_clip, mesh.t_pos_idx)
+            rgb_fg = self.material(
+                viewdirs=gb_viewdirs[selector],
+                positions=positions,
+                light_positions=gb_light_positions[selector],
+                **extra_geo_info,
+                **geo_out
+            )
+            gb_rgb_fg = torch.zeros(batch_size, height, width, 3).to(rgb_fg)
+            gb_rgb_fg[selector] = rgb_fg
 
-                out.update({"comp_rgb": gb_rgb_aa})
-            else:
-                gb_rgb = self.ctx.interpolate_one(mesh.v_rgb, rast, mesh.t_pos_idx)[0]
-                gb_rgb_aa = self.ctx.antialias(gb_rgb, rast, v_pos_clip, mesh.t_pos_idx)
-                out.update({"comp_rgb": gb_rgb_aa})
+            gb_rgb_bg = self.background(dirs=gb_viewdirs)
+            gb_rgb = torch.lerp(gb_rgb_bg, gb_rgb_fg, mask.float())
+            gb_rgb_aa = self.ctx.antialias(gb_rgb, rast, v_pos_clip, mesh.t_pos_idx)
+
+            out.update({"comp_rgb": gb_rgb_aa, "comp_rgb_bg": gb_rgb_bg})
+
         return out
