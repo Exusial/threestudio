@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
-from controlnet_aux import CannyDetector, NormalBaeDetector
+from controlnet_aux import CannyDetector, NormalBaeDetector, OpenposeDetector
 from diffusers import ControlNetModel, DDIMScheduler, StableDiffusionControlNetPipeline
 from diffusers.utils.import_utils import is_xformers_available
 from tqdm import tqdm
@@ -15,7 +15,6 @@ from threestudio.models.prompt_processors.base import PromptProcessorOutput
 from threestudio.utils.base import BaseObject
 from threestudio.utils.misc import C, parse_version
 from threestudio.utils.typing import *
-
 
 @threestudio.register("stable-diffusion-controlnet-guidance")
 class ControlNetGuidance(BaseObject):
@@ -60,6 +59,8 @@ class ControlNetGuidance(BaseObject):
             controlnet_name_or_path = "lllyasviel/control_v11p_sd15_normalbae"
         elif self.cfg.control_type == "canny":
             controlnet_name_or_path = "lllyasviel/control_v11p_sd15_canny"
+        elif self.cfg.control_type == "openpose":
+            controlnet_name_or_path = "lllyasviel/sd-controlnet-openpose"
 
         self.weights_dtype = (
             torch.float16 if self.cfg.half_precision_weights else torch.float32
@@ -81,6 +82,7 @@ class ControlNetGuidance(BaseObject):
         self.pipe = StableDiffusionControlNetPipeline.from_pretrained(
             self.cfg.pretrained_model_name_or_path, controlnet=controlnet, **pipe_kwargs
         ).to(self.device)
+        self.pipe.enable_model_cpu_offload()
         self.scheduler = DDIMScheduler.from_pretrained(
             self.cfg.ddim_scheduler_name_or_path,
             subfolder="scheduler",
@@ -122,6 +124,10 @@ class ControlNetGuidance(BaseObject):
             self.preprocessor.model.to(self.device)
         elif self.cfg.control_type == "canny":
             self.preprocessor = CannyDetector()
+        elif self.cfg.control_type == "openpose":
+            self.preprocessor = OpenposeDetector.from_pretrained(
+                "lllyasviel/ControlNet"
+            )
 
         for p in self.vae.parameters():
             p.requires_grad_(False)
@@ -264,8 +270,10 @@ class ControlNetGuidance(BaseObject):
             threestudio.debug("Editing finished.")
         return latents
 
+    @torch.cuda.amp.autocast(enabled=False)
     def prepare_image_cond(self, cond_rgb: Float[Tensor, "B H W C"]):
-        if self.cfg.control_type == "normal":
+        if self.cfg.control_type == "normal" or self.cfg.control_type == "openpose":
+            #import pdb; pdb.set_trace()
             cond_rgb = (
                 (cond_rgb[0].detach().cpu().numpy() * 255).astype(np.uint8).copy()
             )
@@ -321,6 +329,7 @@ class ControlNetGuidance(BaseObject):
                 down_block_additional_residuals=down_block_res_samples,
                 mid_block_additional_residual=mid_block_res_sample,
             )
+            import pdb; pdb.set_trace()
 
         # perform classifier-free guidance
         noise_pred_text, noise_pred_uncond = noise_pred.chunk(2)
@@ -341,6 +350,7 @@ class ControlNetGuidance(BaseObject):
     ):
         batch_size, H, W, _ = rgb.shape
         assert batch_size == 1
+        #import pdb; pdb.set_trace()
         assert rgb.shape[:-1] == cond_rgb.shape[:-1]
 
         rgb_BCHW = rgb.permute(0, 3, 1, 2)
@@ -354,10 +364,22 @@ class ControlNetGuidance(BaseObject):
         )
         latents = self.encode_images(rgb_BCHW_HW8)
 
+        temp_cond = (
+            (cond_rgb[0].detach().cpu().numpy() * 255).astype(np.uint8).copy()
+        )
+        os.makedirs(".threestudio_cache", exist_ok=True)
+        cv2.imwrite(".threestudio_cache/cond_rgb.jpg", temp_cond)
+
         image_cond = self.prepare_image_cond(cond_rgb)
         image_cond = F.interpolate(
             image_cond, (RH, RW), mode="bilinear", align_corners=False
         )
+        # save image cond
+        temp_cond = (
+            (image_cond[0].detach().cpu().numpy() * 255).astype(np.uint8).copy()
+        )
+        os.makedirs(".threestudio_cache", exist_ok=True)
+        cv2.imwrite(".threestudio_cache/image_cond.jpg", temp_cond.transpose(1, 2, 0))
 
         temp = torch.zeros(1).to(rgb.device)
         text_embeddings = prompt_utils.get_text_embeddings(temp, temp, temp, False)
@@ -370,6 +392,20 @@ class ControlNetGuidance(BaseObject):
             dtype=torch.long,
             device=self.device,
         )
+
+        edit_latents = self.edit_latents(text_embeddings, latents, image_cond, t)
+        edit_images = self.decode_latents(edit_latents)
+        edit_images = F.interpolate(edit_images, (H, W), mode="bilinear")
+        edit_images = edit_images.permute(0, 2, 3, 1)
+        # save edit image
+        edit_image = (
+            (edit_images[0].detach().cpu().clip(0, 1).numpy() * 255)
+            .astype(np.uint8)
+            .copy()
+        )
+        os.makedirs(".threestudio_cache", exist_ok=True)
+        cv2.imwrite(".threestudio_cache/edit_image.jpg", edit_image)
+        import pdb; pdb.set_trace()
 
         if self.cfg.use_sds:
             grad = self.compute_grad_sds(text_embeddings, latents, image_cond, t)
@@ -402,7 +438,6 @@ class ControlNetGuidance(BaseObject):
             min_step_percent=C(self.cfg.min_step_percent, epoch, global_step),
             max_step_percent=C(self.cfg.max_step_percent, epoch, global_step),
         )
-
 
 if __name__ == "__main__":
     from threestudio.utils.config import ExperimentConfig, load_config

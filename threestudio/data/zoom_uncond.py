@@ -376,7 +376,7 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
             baseColorFactor=(color[0], color[1], color[2], 1.0)
         )
         self.scene = pyrender.Scene()
-        light = pyrender.PointLight(color=np.array([1.0, 1.0, 1.0]) * 0.2, intensity=1)
+        light = pyrender.PointLight(color=np.array([1.0, 1.0, 1.0]) * 0.6, intensity=10)
 
         yrot = np.radians(120) # angle of lights
 
@@ -405,10 +405,10 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
                                            cx=w/2., cy=h/2.)
         mvp_mtx = mvp_mtx[0][[0,1,2,3]]
         cam_node = self.scene.add(camera, pose=mvp_mtx.numpy())
-        render_flags = RenderFlags.RGBA | RenderFlags.SHADOWS_SPOT
+        render_flags = RenderFlags.SHADOWS_SPOT
         rgb, _ = self.renderer.render(self.scene, flags=render_flags)
         self.scene.remove_node(cam_node)
-        # cv2.imwrite("smpl222.png", rgb)
+        cv2.imwrite("smpl222.png", rgb)
         return rgb
 
     def focus_mode_camera_position(self, smpl_mesh):
