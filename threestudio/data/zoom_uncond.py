@@ -29,8 +29,10 @@ from threestudio.utils.ops import (
 )
 from threestudio.utils.typing import *
 
-from threestudio.utils.smpl_utils import zoom_bbox_in_apos, check_bbox
+from threestudio.utils.smpl_utils import zoom_bbox_in_apos, check_bbox,draw_poses,rotate_x,rotate_y,rotate_z
 
+import smplx
+import joblib
 
 @dataclass
 class RandomCameraDataModuleConfig:
@@ -98,6 +100,19 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         self.width: int = self.widths[0]
         self.directions_unit_focal = self.directions_unit_focals[0]
         self.head_bbox = torch.tensor(zoom_bbox_in_apos())
+        #CHANGE
+        smpl_model = smplx.create("/home/ldy/ldy/smplx_openpose/wiki/assets/SMPLX_OpenPose_mapping/models",model_type="smplx")
+        smpl_data = joblib.load("/home/penghy/diffusion/avatars/sketchhuman/extern/PyMAF-X/output/anime/output.pkl")
+        pose = torch.tensor(smpl_data["pose"][0].reshape(1,72)[:,3:66])
+        betas = torch.tensor(smpl_data["betas"][0]).reshape(1, 10)
+        smpl_mesh = smpl_model(betas=betas, body_pose=pose, return_verts=True)
+        joints = smpl_mesh.joints.squeeze()
+        mapping = [55, 12, 17, 19, 21, 16, 18, 20, 2, 5, 8, 1, 4, 7, 56, 57, 58, 59]
+        openpose_joints = joints[mapping]
+        openpose_joints = rotate_x(np.pi/2).dot(rotate_y(-np.pi / 2).dot(openpose_joints.detach().cpu().numpy().T)).T
+        openpose_joints = torch.from_numpy(openpose_joints).float()
+        self.openpose_joints_homogeneous = torch.cat([openpose_joints, torch.ones_like(openpose_joints[:, :1])], dim=-1)
+        
         self.smpl_mesh = trimesh.load(self.cfg.smpl_dir)
         self.colors_dict = {
             'red': np.array([0.5, 0.2, 0.2]),
@@ -325,7 +340,7 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         mvp_mtx: Float[Tensor, "B 4 4"] = get_mvp_matrix(c2w, proj_mtx)
 
         smpl_map = self.generate_view_smpl_map(c2w, fovy)
-
+        openpose_map = self.generate_view_smplx_openpose(c2w, fovy)
         batch =  {
             "rays_o": rays_o,
             "rays_d": rays_d,
@@ -339,6 +354,7 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
             "height": self.height,
             "width": self.width,
             "rendered_smpl": smpl_map,
+            "rendered_openpose": openpose_map,
         }
         for k, v in focus_rays.items():
             batch[k] = v
@@ -410,6 +426,59 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         self.scene.remove_node(cam_node)
         cv2.imwrite("smpl222.png", rgb)
         return rgb
+
+    def generate_view_smplx_openpose(self, mvp_mtx, fovy):
+        # with torch.no_grad():
+        # breakpoint()
+        h, w = self.height, self.width
+        focal_length = 0.5 * h / np.tan(0.5 * fovy)
+        camera = pyrender.IntrinsicsCamera(fx=focal_length, fy=focal_length,
+                                        cx=w/2., cy=h/2.)
+        mvp_mtx = mvp_mtx[0][[0,1,2,3]]
+        camera_intrinsic = camera.get_projection_matrix(w, h)
+        camera_intrinsic = torch.tensor(camera_intrinsic, dtype=torch.float32)
+        # print(camera_intrinsic)
+        #
+        project_joints = self.openpose_joints_homogeneous
+        # points_homogenous = np.concatenate([points, np.ones((points.shape[0], 1))], axis=1)
+        # breakpoint()
+        # print(points_homogenous.shape)
+        # print((pose @ points_homogenous.T)[:3,].shape)
+        # trans = camera_intrinsic@pose
+
+        projected_points=torch.inverse(mvp_mtx)@project_joints.T
+        breakpoint()
+        
+        # aa/=aa[3,:]
+        # print(aa)
+        # aa =aa[:2,:].T
+        # projected_points = aa
+        projected_points = projected_points[:3,:].permute(1,0)
+        projected_points = projected_points[:, :2] / projected_points[:, 2:3] * focal_length + h // 2
+        # projected_points=camera_intrinsic@projected_points
+        # projected_points = projected_points.T
+        # projected_points/=projected_points[-1,:].clone()
+        # projected_points = projected_points[:2,:].T
+        # print((pose @ points_homogenous.T)[:3,])
+        # print(camera_intrinsic.shape)
+        # print(camera_intrinsic)
+        # projected_points = camera_intrinsic @ (pose @ points_homogenous.T)
+        # projected_points=  (projected_points+1)/2
+        # projected_points = 1-projected_points
+
+
+        detect_resolution = 512
+        projected_points /= detect_resolution
+        openpose_img = draw_poses(projected_points, detect_resolution,detect_resolution,draw_body=True, draw_hand=False, draw_face=False)
+        openpose_img = cv2.resize(openpose_img, (w,h), interpolation=cv2.INTER_LINEAR)
+
+        # cam_node = self.scene.add(camera, pose=mvp_mtx.numpy())
+        # render_flags = RenderFlags.SHADOWS_SPOT
+        # rgb, _ = self.renderer.render(self.scene, flags=render_flags)
+        # self.scene.remove_node(cam_node)
+        cv2.imwrite("smplx_openpose.png", openpose_img)
+        breakpoint()
+        return openpose_img
 
     def focus_mode_camera_position(self, smpl_mesh):
         # todo: test nodes here.
