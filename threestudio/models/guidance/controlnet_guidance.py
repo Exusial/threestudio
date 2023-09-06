@@ -272,7 +272,7 @@ class ControlNetGuidance(BaseObject):
 
     @torch.cuda.amp.autocast(enabled=False)
     def prepare_image_cond(self, cond_rgb: Float[Tensor, "B H W C"]):
-        if self.cfg.control_type == "normal" or self.cfg.control_type == "openpose":
+        if self.cfg.control_type == "normal":
             #import pdb; pdb.set_trace()
             cond_rgb = (
                 (cond_rgb[0].detach().cpu().numpy() * 255).astype(np.uint8).copy()
@@ -296,6 +296,18 @@ class ControlNetGuidance(BaseObject):
             )
             control = control.unsqueeze(-1).repeat(1, 1, 3)
             control = control.unsqueeze(0)
+            control = control.permute(0, 3, 1, 2)
+        elif self.cfg.control_type == "openpose":
+            # cond_rgb = (
+            #     (cond_rgb[0].detach().cpu().numpy() * 255).astype(np.uint8).copy()
+            # )
+            # detected_map = self.preprocessor(cond_rgb)
+            # control = (
+            #     torch.from_numpy(np.array(detected_map)).float().to(self.device) / 255.0
+            # )
+            # control = control.unsqueeze(0)
+            # control = control.permute(0, 3, 1, 2)
+            control = cond_rgb.float().to(self.device) / 255.0
             control = control.permute(0, 3, 1, 2)
 
         return control
@@ -329,7 +341,6 @@ class ControlNetGuidance(BaseObject):
                 down_block_additional_residuals=down_block_res_samples,
                 mid_block_additional_residual=mid_block_res_sample,
             )
-            import pdb; pdb.set_trace()
 
         # perform classifier-free guidance
         noise_pred_text, noise_pred_uncond = noise_pred.chunk(2)
@@ -364,22 +375,22 @@ class ControlNetGuidance(BaseObject):
         )
         latents = self.encode_images(rgb_BCHW_HW8)
 
-        temp_cond = (
-            (cond_rgb[0].detach().cpu().numpy() * 255).astype(np.uint8).copy()
-        )
-        os.makedirs(".threestudio_cache", exist_ok=True)
-        cv2.imwrite(".threestudio_cache/cond_rgb.jpg", temp_cond)
+        # temp_cond = (
+        #     (cond_rgb[0].detach().cpu().numpy()).astype(np.uint8).copy()
+        # )
+        # os.makedirs(".threestudio_cache", exist_ok=True)
+        # cv2.imwrite(".threestudio_cache/cond_rgb.jpg", temp_cond)
 
         image_cond = self.prepare_image_cond(cond_rgb)
         image_cond = F.interpolate(
             image_cond, (RH, RW), mode="bilinear", align_corners=False
         )
-        # save image cond
-        temp_cond = (
-            (image_cond[0].detach().cpu().numpy() * 255).astype(np.uint8).copy()
-        )
-        os.makedirs(".threestudio_cache", exist_ok=True)
-        cv2.imwrite(".threestudio_cache/image_cond.jpg", temp_cond.transpose(1, 2, 0))
+        # # save image cond
+        # temp_cond = (
+        #     (image_cond[0].detach().cpu().numpy()).astype(np.uint8).copy()
+        # )
+        # os.makedirs(".threestudio_cache", exist_ok=True)
+        # cv2.imwrite(".threestudio_cache/image_cond.jpg", temp_cond.transpose(1, 2, 0))
 
         temp = torch.zeros(1).to(rgb.device)
         text_embeddings = prompt_utils.get_text_embeddings(temp, temp, temp, False)
@@ -393,19 +404,19 @@ class ControlNetGuidance(BaseObject):
             device=self.device,
         )
 
-        edit_latents = self.edit_latents(text_embeddings, latents, image_cond, t)
-        edit_images = self.decode_latents(edit_latents)
-        edit_images = F.interpolate(edit_images, (H, W), mode="bilinear")
-        edit_images = edit_images.permute(0, 2, 3, 1)
-        # save edit image
-        edit_image = (
-            (edit_images[0].detach().cpu().clip(0, 1).numpy() * 255)
-            .astype(np.uint8)
-            .copy()
-        )
-        os.makedirs(".threestudio_cache", exist_ok=True)
-        cv2.imwrite(".threestudio_cache/edit_image.jpg", edit_image)
-        import pdb; pdb.set_trace()
+        # edit_latents = self.edit_latents(text_embeddings, latents, image_cond, t)
+        # edit_images = self.decode_latents(edit_latents)
+        # edit_images = F.interpolate(edit_images, (H, W), mode="bilinear")
+        # edit_images = edit_images.permute(0, 2, 3, 1)
+        # # save edit image
+        # edit_image = (
+        #     (edit_images[0].detach().cpu().clip(0, 1).numpy() * 255)
+        #     .astype(np.uint8)
+        #     .copy()
+        # )
+        # os.makedirs(".threestudio_cache", exist_ok=True)
+        # cv2.imwrite(".threestudio_cache/edit_image.jpg", edit_image)
+        # import pdb; pdb.set_trace()
 
         if self.cfg.use_sds:
             grad = self.compute_grad_sds(text_embeddings, latents, image_cond, t)

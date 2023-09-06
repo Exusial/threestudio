@@ -11,6 +11,7 @@ from threestudio.utils.typing import *
 from threestudio.utils.smpl_utils import zoom_bbox_in_apos
 
 import torchvision.transforms as transforms
+from threestudio.models.guidance.controlnet_guidance import ControlNetGuidance
 
 @threestudio.register("dreamavatar-control-system")
 class DreamAvatar(BaseLift3DSystem):
@@ -105,11 +106,17 @@ class DreamAvatar(BaseLift3DSystem):
         # FB
         # self.prompt_processor.prompt = "Full body photo of " + origin_prompt
         #import pdb; pdb.set_trace()
-        rendered_smpl = torch.from_numpy(batch["rendered_smpl"].copy())
-        rendered_smpl = rendered_smpl.unsqueeze(0)
-        guidance_out = self.guidance(
-            out["comp_rgb"], rendered_smpl, self.prompt_utils, **batch
-        )
+        rendered_openpose = torch.from_numpy(batch["rendered_openpose"].copy())
+        rendered_openpose = rendered_openpose.unsqueeze(0)
+        # import pdb; pdb.set_trace()
+        if self.cfg.guidance_type == "stable-diffusion-controlnet-guidance":
+            guidance_out = self.guidance(
+                out["comp_rgb"], rendered_openpose, self.prompt_utils, **batch
+            )
+        else:
+            guidance_out = self.guidance(
+                out["comp_rgb"], self.prompt_utils, **batch
+            )
 
         for name, value in guidance_out.items():
             self.log(f"train/{name}", value)

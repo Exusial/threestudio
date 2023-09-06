@@ -13,7 +13,9 @@
 
 export HTTPS_PROXY=http://shadowhome.top:7890
 # for geo part
-python launch.py --config configs/dreamavatar-vsd-control.yaml --train --gpu 3 system.prompt_processor.prompt="masterpiece, best quality, Cjiang, 1gril, looking at view, full body, white background" \
-system.prompt_processor.part_prompt="masterpiece, best quality, Cjiang, 1gril, looking at view, full body, white background"
+python launch.py --config configs/dreamavatar-vsd-control.yaml --train --gpu 3 \
+system.prompt_processor.prompt="Elsa" \
+system.prompt_processor.part_prompt="Elsa"
+#system.prompt_processor.part_prompt="masterpiece, best quality, Cjiang, 1gril, looking at view, full body, white background"
 #system.geometry_convert_from=/home/penghy/diffusion/threestudio/outputs/dreamavatar-vsd-zoom/Elsa@20230803-170446/ckpts/last.ckpt \
 #system.geometry_convert_override.isosurface_threshold=10.

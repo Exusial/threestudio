@@ -104,8 +104,8 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         self.id=0
         smpl_model = smplx.create("/home/ldy/ldy/smplx_openpose/wiki/assets/SMPLX_OpenPose_mapping/models",model_type="smplx")
         smpl_data = joblib.load("/home/penghy/diffusion/avatars/sketchhuman/extern/PyMAF-X/output/anime/output.pkl")
-        pose = torch.tensor(smpl_data["pose"][0].reshape(1,72)[:,3:66])
         betas = torch.tensor(smpl_data["betas"][0]).reshape(1, 10)
+        pose = torch.tensor(smpl_data["pose"][0].reshape(1,72)[:,3:66])
         a_pose = torch.zeros_like(pose).reshape(1,-1,3)
         a_pose[:,12,2] = -0.8
         a_pose[:,13,2] = 0.8
@@ -460,7 +460,6 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         # w2c[:,1]*=-1
         w2c[:,2]*=-1
         projected_points=w2c@project_joints.T
-        breakpoint()
         
         # aa/=aa[3,:]
         # print(aa)
@@ -482,7 +481,6 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
 
         detect_resolution = 512
         projected_points /= detect_resolution
-        breakpoint()
         projected_points = 1-projected_points
         openpose_img = draw_poses(projected_points, detect_resolution,detect_resolution,draw_body=True, draw_hand=False, draw_face=False)
         openpose_img = cv2.resize(openpose_img, (w,h), interpolation=cv2.INTER_LINEAR)
@@ -491,10 +489,10 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         # render_flags = RenderFlags.SHADOWS_SPOT
         # rgb, _ = self.renderer.render(self.scene, flags=render_flags)
         # self.scene.remove_node(cam_node)
-        cv2.imwrite(f"openpose_{self.id}.png", openpose_img)
-        self.id+=1
-        print('id=',self.id)
-        breakpoint()
+        # cv2.imwrite(f"openpose_{self.id}.png", openpose_img)
+        # self.id+=1
+        # print('id=',self.id)
+        # breakpoint()
         return openpose_img
 
     def focus_mode_camera_position(self, smpl_mesh):
