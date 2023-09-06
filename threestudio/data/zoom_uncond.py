@@ -101,15 +101,24 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         self.directions_unit_focal = self.directions_unit_focals[0]
         self.head_bbox = torch.tensor(zoom_bbox_in_apos())
         #CHANGE
+        self.id=0
         smpl_model = smplx.create("/home/ldy/ldy/smplx_openpose/wiki/assets/SMPLX_OpenPose_mapping/models",model_type="smplx")
         smpl_data = joblib.load("/home/penghy/diffusion/avatars/sketchhuman/extern/PyMAF-X/output/anime/output.pkl")
         pose = torch.tensor(smpl_data["pose"][0].reshape(1,72)[:,3:66])
         betas = torch.tensor(smpl_data["betas"][0]).reshape(1, 10)
-        smpl_mesh = smpl_model(betas=betas, body_pose=pose, return_verts=True)
+        a_pose = torch.zeros_like(pose).reshape(1,-1,3)
+        a_pose[:,12,2] = -0.8
+        a_pose[:,13,2] = 0.8
+        smpl_mesh = smpl_model(betas=betas, body_pose=a_pose, return_verts=True)
+        smpl_mesh_vertices = smpl_mesh.vertices.squeeze()
+        smpl_mesh_vertices_mean=smpl_mesh_vertices.mean()
+        smpl_mesh_vertices_max=smpl_mesh_vertices.max()
         joints = smpl_mesh.joints.squeeze()
+        joints = joints-smpl_mesh_vertices_mean
+        joints = joints/smpl_mesh_vertices_max/1.6
         mapping = [55, 12, 17, 19, 21, 16, 18, 20, 2, 5, 8, 1, 4, 7, 56, 57, 58, 59]
         openpose_joints = joints[mapping]
-        openpose_joints = rotate_x(np.pi/2).dot(rotate_y(-np.pi / 2).dot(openpose_joints.detach().cpu().numpy().T)).T
+        openpose_joints = rotate_z(np.pi/2).dot(rotate_x(np.pi/2).dot(openpose_joints.detach().cpu().numpy().T)).T
         openpose_joints = torch.from_numpy(openpose_joints).float()
         self.openpose_joints_homogeneous = torch.cat([openpose_joints, torch.ones_like(openpose_joints[:, :1])], dim=-1)
         
@@ -424,7 +433,7 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         render_flags = RenderFlags.SHADOWS_SPOT
         rgb, _ = self.renderer.render(self.scene, flags=render_flags)
         self.scene.remove_node(cam_node)
-        cv2.imwrite("smpl222.png", rgb)
+        cv2.imwrite(f"smplx{self.id}.png", rgb)
         return rgb
 
     def generate_view_smplx_openpose(self, mvp_mtx, fovy):
@@ -445,8 +454,12 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         # print(points_homogenous.shape)
         # print((pose @ points_homogenous.T)[:3,].shape)
         # trans = camera_intrinsic@pose
-
-        projected_points=torch.inverse(mvp_mtx)@project_joints.T
+        w2c = torch.inverse(mvp_mtx)
+        # w2c[:,1:3]*=-1
+        # w2c[:,0]*=-1
+        # w2c[:,1]*=-1
+        w2c[:,2]*=-1
+        projected_points=w2c@project_joints.T
         breakpoint()
         
         # aa/=aa[3,:]
@@ -469,6 +482,8 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
 
         detect_resolution = 512
         projected_points /= detect_resolution
+        breakpoint()
+        projected_points = 1-projected_points
         openpose_img = draw_poses(projected_points, detect_resolution,detect_resolution,draw_body=True, draw_hand=False, draw_face=False)
         openpose_img = cv2.resize(openpose_img, (w,h), interpolation=cv2.INTER_LINEAR)
 
@@ -476,7 +491,9 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         # render_flags = RenderFlags.SHADOWS_SPOT
         # rgb, _ = self.renderer.render(self.scene, flags=render_flags)
         # self.scene.remove_node(cam_node)
-        cv2.imwrite("smplx_openpose.png", openpose_img)
+        cv2.imwrite(f"openpose_{self.id}.png", openpose_img)
+        self.id+=1
+        print('id=',self.id)
         breakpoint()
         return openpose_img
 

@@ -31,7 +31,12 @@ def rotate_y(rad):
         [0., 1., 0.],
         [-np.sin(rad), 0., np.cos(rad)]
     ])
-
+def rotate_z(rad):
+    return np.array([
+        [np.cos(rad), -np.sin(rad), 0.],
+        [np.sin(rad), np.cos(rad), 0.],
+        [0., 0., 1.]
+    ])
 def save_smpl_to_obj(model_folder, out_dir="smpl.obj", model_type='smplx', ext='npz', gender='neutral', 
     num_betas=10, num_expression_coeffs=10, use_face_contour=False, sample_shape=False, sample_expression=True, bbox=None
     ,rotate=None):
