@@ -96,10 +96,10 @@ class DreamAvatar(BaseLift3DSystem):
         pass
 
     def training_step(self, batch, batch_idx):
-        if batch_idx == self.cfg.part_stage:
-            self.cfg.use_vsd = 0
-            del self.guidance 
-            self.guidance = self.sds_guidance
+        # if batch_idx == self.cfg.part_stage:
+        #     self.cfg.use_vsd = 0
+        #     del self.guidance 
+        #     self.guidance = self.sds_guidance
         out = self(batch, training=True)
         loss = 0.0
         origin_prompt = self.prompt_processor.prompt
@@ -109,7 +109,12 @@ class DreamAvatar(BaseLift3DSystem):
         rendered_openpose = torch.from_numpy(batch["rendered_openpose"].copy())
         rendered_openpose = rendered_openpose.unsqueeze(0)
         # import pdb; pdb.set_trace()
-        if self.cfg.guidance_type == "stable-diffusion-controlnet-guidance":
+        if self.cfg.use_vsd:
+            guidance_out = self.guidance(
+                out["comp_rgb"], self.prompt_utils, **batch, rgb_as_latents=False, cond_rgb=rendered_openpose
+            )
+            pass
+        elif self.cfg.guidance_type == "stable-diffusion-controlnet-guidance":
             guidance_out = self.guidance(
                 out["comp_rgb"], rendered_openpose, self.prompt_utils, **batch
             )

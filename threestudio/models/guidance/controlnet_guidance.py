@@ -366,28 +366,29 @@ class ControlNetGuidance(BaseObject):
 
         rgb_BCHW = rgb.permute(0, 3, 1, 2)
         latents: Float[Tensor, "B 4 DH DW"]
-        if self.cfg.fixed_size > 0:
-            RH, RW = self.cfg.fixed_size, self.cfg.fixed_size
-        else:
-            RH, RW = H // 8 * 8, W // 8 * 8
-        rgb_BCHW_HW8 = F.interpolate(
-            rgb_BCHW, (RH, RW), mode="bilinear", align_corners=False
-        )
-        latents = self.encode_images(rgb_BCHW_HW8)
+        # if self.cfg.fixed_size > 0:
+        #     RH, RW = self.cfg.fixed_size, self.cfg.fixed_size
+        # else:
+        #     RH, RW = H // 8 * 8, W // 8 * 8
+        # rgb_BCHW_HW8 = F.interpolate(
+        #     rgb_BCHW, (RH, RW), mode="bilinear", align_corners=False
+        # )
+        # latents = self.encode_images(rgb_BCHW_HW8)
+        latents = self.encode_images(rgb_BCHW)
 
         # temp_cond = (
-        #     (cond_rgb[0].detach().cpu().numpy()).astype(np.uint8).copy()
+        #     (cond_rgb[0].detach().cpu().numpy() * 255.).astype(np.uint8).copy()
         # )
         # os.makedirs(".threestudio_cache", exist_ok=True)
         # cv2.imwrite(".threestudio_cache/cond_rgb.jpg", temp_cond)
 
         image_cond = self.prepare_image_cond(cond_rgb)
-        image_cond = F.interpolate(
-            image_cond, (RH, RW), mode="bilinear", align_corners=False
-        )
+        # image_cond = F.interpolate(
+        #     image_cond, (RH, RW), mode="bilinear", align_corners=False
+        # )
         # # save image cond
         # temp_cond = (
-        #     (image_cond[0].detach().cpu().numpy()).astype(np.uint8).copy()
+        #     (image_cond[0].detach().cpu().numpy() * 255.).astype(np.uint8).copy()
         # )
         # os.makedirs(".threestudio_cache", exist_ok=True)
         # cv2.imwrite(".threestudio_cache/image_cond.jpg", temp_cond.transpose(1, 2, 0))
@@ -404,7 +405,7 @@ class ControlNetGuidance(BaseObject):
             device=self.device,
         )
 
-        # edit_latents = self.edit_latents(text_embeddings, latents, image_cond, t)
+        # edit_latents = self.edit_latents(text_embeddings, latents, image_cond, torch.tensor(self.max_step))
         # edit_images = self.decode_latents(edit_latents)
         # edit_images = F.interpolate(edit_images, (H, W), mode="bilinear")
         # edit_images = edit_images.permute(0, 2, 3, 1)
@@ -416,6 +417,7 @@ class ControlNetGuidance(BaseObject):
         # )
         # os.makedirs(".threestudio_cache", exist_ok=True)
         # cv2.imwrite(".threestudio_cache/edit_image.jpg", edit_image)
+
         # import pdb; pdb.set_trace()
 
         if self.cfg.use_sds:

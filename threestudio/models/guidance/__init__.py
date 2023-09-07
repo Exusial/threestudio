@@ -6,5 +6,6 @@ from . import (
     stable_diffusion_unified_guidance,
     stable_diffusion_vsd_guidance,
     zero123_guidance,
-    stable_diffusion_vsd_xl_guidance
+    stable_diffusion_vsd_xl_guidance,
+    vsd_controlnet_guidance
 )

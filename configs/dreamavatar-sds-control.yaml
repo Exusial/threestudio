@@ -100,26 +100,26 @@ system:
     radius: ${system.geometry.radius}
     num_samples_per_ray: 512
 
-  # guidance_type: "vsd-controlnet-guidance"
-  # guidance:
-  #   pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
-  #   pretrained_model_name_or_path_lora: "runwayml/stable-diffusion-v1-5"
-  #   #pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/cjiang_anything_v5"
-  #   control_type: "openpose"
-  #   min_step_percent: 0.02
-  #   max_step_percent: 0.98
-  #   guidance_scale: 10.
-  #   condition_scale: 1.5
-
-  guidance_type: "stable-diffusion-guidance"
+  guidance_type: "stable-diffusion-controlnet-guidance"
   guidance:
     pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
-    # pretrained_model_name_or_path: "stabilityai/stable-diffusion-2-1-base"
-    # pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/cjiang_anything_v5"
-    guidance_scale: 100.
-    weighting_strategy: sds
+    #pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/cjiang_anything_v5"
+    control_type: "openpose"
     min_step_percent: 0.02
     max_step_percent: 0.98
+    guidance_scale: 100.
+    condition_scale: 1.5
+    use_sds: 1
+
+  # guidance_type: "stable-diffusion-guidance"
+  # guidance:
+  #   pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
+  #   # pretrained_model_name_or_path: "stabilityai/stable-diffusion-2-1-base"
+  #   # pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/cjiang_anything_v5"
+  #   guidance_scale: 100.
+  #   weighting_strategy: sds
+  #   min_step_percent: 0.02
+  #   max_step_percent: 0.98
 
   loggers:
     wandb:
@@ -127,18 +127,18 @@ system:
       project: 'threestudio'
 
   loss:
-    lambda_vsd: 1
     lambda_sds: 1
     lambda_lora: 1.
     lambda_normal: 1
     lambda_orient: 0.
-    lambda_sparsity: 1.
+    lambda_sparsity: 0.
     lambda_opaque: [10000, 0.0, 1000.0, 10001]
-    lambda_z_variance: 5.
+    lambda_z_variance: 10.
 
   optimizer:
     name: AdamW
     args:
+      lr: 0.01
       betas: [0.9, 0.99]
       eps: 1.e-15
     params:

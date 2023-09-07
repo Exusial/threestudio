@@ -348,7 +348,8 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         )  # FIXME: hard-coded near and far
         mvp_mtx: Float[Tensor, "B 4 4"] = get_mvp_matrix(c2w, proj_mtx)
 
-        smpl_map = self.generate_view_smpl_map(c2w, fovy)
+        smpl_map = None
+        #smpl_map = self.generate_view_smpl_map(c2w, fovy)
         openpose_map = self.generate_view_smplx_openpose(c2w, fovy)
         batch =  {
             "rays_o": rays_o,
@@ -479,7 +480,7 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         # projected_points = 1-projected_points
 
 
-        detect_resolution = 512
+        detect_resolution = h
         projected_points /= detect_resolution
         projected_points = 1-projected_points
         openpose_img = draw_poses(projected_points, detect_resolution,detect_resolution,draw_body=True, draw_hand=False, draw_face=False)
