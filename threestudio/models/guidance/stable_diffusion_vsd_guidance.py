@@ -91,7 +91,8 @@ class StableDiffusionVSDGuidance(BaseModule):
         
         # Hardcode here to utilize local models
         pipe = StableDiffusionPipeline.from_pretrained(
-            "/home/penghy/.cache/huggingface/hub/models--stabilityai--stable-diffusion-2-1-base/snapshots/5ede9e4bf3e3fd1cb0ef2f7a3fff13ee514fdf06",
+            self.cfg.pretrained_model_name_or_path,
+            #"/home/penghy/.cache/huggingface/hub/models--stabilityai--stable-diffusion-2-1-base/snapshots/5ede9e4bf3e3fd1cb0ef2f7a3fff13ee514fdf06",
             **pipe_kwargs
         ).to(self.device)
         # pipe = StableDiffusionPipeline.from_pretrained(
@@ -108,7 +109,8 @@ class StableDiffusionVSDGuidance(BaseModule):
             self.single_model = False
             # Hardcode here to utilize local models
             pipe_lora = StableDiffusionPipeline.from_pretrained(
-                "/home/penghy/.cache/huggingface/hub/models--stabilityai--stable-diffusion-2-1/snapshots/5cae40e6a2745ae2b01ad92ae5043f95f23644d6",
+                self.cfg.pretrained_model_name_or_path_lora,
+                #"/home/penghy/.cache/huggingface/hub/models--stabilityai--stable-diffusion-2-1/snapshots/5cae40e6a2745ae2b01ad92ae5043f95f23644d6",
                 **pipe_kwargs
             ).to(self.device)
             # pipe_lora = StableDiffusionPipeline.from_pretrained(

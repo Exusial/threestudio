@@ -60,6 +60,7 @@ class ControlNetGuidance(BaseObject):
         elif self.cfg.control_type == "canny":
             controlnet_name_or_path = "lllyasviel/control_v11p_sd15_canny"
         elif self.cfg.control_type == "openpose":
+            #controlnet_name_or_path = "lllyasviel/control_v11p_sd15_openpose"
             controlnet_name_or_path = "lllyasviel/sd-controlnet-openpose"
 
         self.weights_dtype = (

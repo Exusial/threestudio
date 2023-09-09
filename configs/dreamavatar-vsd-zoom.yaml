@@ -106,8 +106,8 @@ system:
     guidance_scale: 10.
     min_step_percent: 0.02
     max_step_percent: 0.98
-    max_step_percent_annealed: 0.5
-    anneal_start_step: 5000
+    # max_step_percent_annealed: 0.5
+    # anneal_start_step: 5000
 
   sds_guidance_type: "stable-diffusion-guidance"
   sds_guidance:
@@ -115,8 +115,8 @@ system:
     guidance_scale: 50.
     min_step_percent: 0.02
     max_step_percent: 0.98
-    max_step_percent_annealed: 0.5
-    anneal_start_step: 0
+    # max_step_percent_annealed: 0.5
+    # anneal_start_step: 0
 
   loggers:
     wandb:

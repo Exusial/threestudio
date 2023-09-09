@@ -9,13 +9,13 @@ data:
   width: [128, 512]
   height: [128, 512]
   resolution_milestones: [5000]
-  camera_distance_range: [1.5, 2.0]
+  camera_distance_range: [1.7, 2.0]
   fovy_range: [40, 70]
-  elevation_range: [-10, 90]
+  elevation_range: [-10, 45]
   camera_perturb: 0.
   center_perturb: 0.
   up_perturb: 0.
-  eval_camera_distance: 2.0
+  eval_camera_distance: 1.8
   eval_fovy_deg: 70.
   focus_mode: 0
   focus_camera_distance: 0.6
@@ -100,26 +100,34 @@ system:
     radius: ${system.geometry.radius}
     num_samples_per_ray: 512
 
-  # guidance_type: "vsd-controlnet-guidance"
+  guidance_type: "vsd-controlnet-guidance"
+  guidance:
+    pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
+    pretrained_model_name_or_path_lora: "runwayml/stable-diffusion-v1-5"
+    #pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/cjiang_anything_v5"
+    control_type: "openpose"
+    min_step_percent: 0.02
+    max_step_percent: 0.98
+    guidance_scale: 7.5
+    condition_scale: 0.2
+
+  # guidance_type: "stable-diffusion-guidance"
+  # guidance:
+  #   pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
+  #   # pretrained_model_name_or_path: "stabilityai/stable-diffusion-2-1-base"
+  #   # pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/cjiang_anything_v5"
+  #   guidance_scale: 100.
+  #   weighting_strategy: sds
+  #   min_step_percent: 0.02
+  #   max_step_percent: 0.98
+
+  # guidance_type: "stable-diffusion-vsd-guidance"
   # guidance:
   #   pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
   #   pretrained_model_name_or_path_lora: "runwayml/stable-diffusion-v1-5"
-  #   #pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/cjiang_anything_v5"
-  #   control_type: "openpose"
+  #   guidance_scale: 7.5
   #   min_step_percent: 0.02
   #   max_step_percent: 0.98
-  #   guidance_scale: 10.
-  #   condition_scale: 1.5
-
-  guidance_type: "stable-diffusion-guidance"
-  guidance:
-    pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
-    # pretrained_model_name_or_path: "stabilityai/stable-diffusion-2-1-base"
-    # pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/cjiang_anything_v5"
-    guidance_scale: 100.
-    weighting_strategy: sds
-    min_step_percent: 0.02
-    max_step_percent: 0.98
 
   loggers:
     wandb:
@@ -132,9 +140,9 @@ system:
     lambda_lora: 1.
     lambda_normal: 1
     lambda_orient: 0.
-    lambda_sparsity: 1.
+    lambda_sparsity: 10.
     lambda_opaque: [10000, 0.0, 1000.0, 10001]
-    lambda_z_variance: 5.
+    lambda_z_variance: 0
 
   optimizer:
     name: AdamW

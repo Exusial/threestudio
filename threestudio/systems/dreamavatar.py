@@ -50,8 +50,8 @@ class DreamAvatar(BaseLift3DSystem):
         if self.stage == "nerf":
             render_out = self.renderer(**batch, render_normal=True)
             part_render_out = None
+            render_dict = {**render_out}
             if self.cfg.zoomable and training:
-                render_dict = {**render_out}
                 if "rays_o_head" in batch:
                     batch["rays_o"] = batch["rays_o_head"]
                     batch["rays_d"] = batch["rays_d_head"]

@@ -14,7 +14,7 @@ import torchvision.transforms as transforms
 from threestudio.models.guidance.controlnet_guidance import ControlNetGuidance
 
 @threestudio.register("dreamavatar-control-system")
-class DreamAvatar(BaseLift3DSystem):
+class DreamAvatarControl(BaseLift3DSystem):
     @dataclass
     class Config(BaseLift3DSystem.Config):
         # only used when refinement=True and from_coarse=True
@@ -32,15 +32,14 @@ class DreamAvatar(BaseLift3DSystem):
     def configure(self):
         # create geometry, material, background, renderer
         super().configure()
-        if self.cfg.use_vsd:
-            self.guidance = threestudio.find(self.cfg.guidance_type)(self.cfg.guidance)
-            self.prompt_processor = threestudio.find(self.cfg.prompt_processor_type)(
-                self.cfg.prompt_processor
-            )
-            self.prompt_utils = self.prompt_processor()
-            if self.cfg.part_stage >= 0:
-                self.sds_guidance = threestudio.find(self.cfg.sds_guidance_type)(self.cfg.sds_guidance)
-            self.renderer.training = True
+        self.guidance = threestudio.find(self.cfg.guidance_type)(self.cfg.guidance)
+        self.prompt_processor = threestudio.find(self.cfg.prompt_processor_type)(
+            self.cfg.prompt_processor
+        )
+        self.prompt_utils = self.prompt_processor()
+        if self.cfg.part_stage >= 0:
+            self.sds_guidance = threestudio.find(self.cfg.sds_guidance_type)(self.cfg.sds_guidance)
+        self.renderer.training = True
         self.head_bbox = zoom_bbox_in_apos()
         self.focus_mode = ["head"]
         self.stage = self.cfg.stage

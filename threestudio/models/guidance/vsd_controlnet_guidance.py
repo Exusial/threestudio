@@ -74,7 +74,8 @@ class VSDControlNetGuidance(BaseModule):
 
         controlnet_name_or_path: str
         if self.cfg.control_type == "openpose":
-            controlnet_name_or_path = "lllyasviel/sd-controlnet-openpose"
+            controlnet_name_or_path = "lllyasviel/control_v11p_sd15_openpose"
+            #controlnet_name_or_path = "lllyasviel/sd-controlnet-openpose"
 
         self.weights_dtype = (
             torch.float16 if self.cfg.half_precision_weights else torch.float32
