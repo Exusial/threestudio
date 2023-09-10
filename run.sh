@@ -13,9 +13,11 @@
 
 export HTTPS_PROXY=http://ddns.shadowhome.top:7890
 # for geo part
-python launch.py --config configs/Cjiang.yaml --train --gpu 2 \
-system.prompt_processor.part_prompt="Elsa" \
-system.prompt_processor.prompt="masterpiece, best quality, Cjiang, 1gril, full body, white background"
+python launch.py --config configs/dreamavatar-sds-control.yaml --train --gpu 7 \
+system.prompt_processor.part_prompt="masterpiece,best quality,Cjiang,1gril" \
+system.prompt_processor.prompt="masterpiece,best quality,Cjiang,1gril"
+# system.prompt_processor.prompt="Elsa"
+#system.prompt_processor.prompt="masterpiece, best quality, Cjiang, 1gril, full body, white background"
 #system.prompt_processor.prompt="Elsa"
 #system.prompt_processor.prompt="masterpiece, best quality, Cjiang, 1gril, looking at view, full body, white background" \
 #system.prompt_processor.part_prompt="masterpiece, best quality, Cjiang, 1gril, looking at view, full body, white background"

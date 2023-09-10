@@ -9,8 +9,8 @@ data:
   width: [256, 512]
   height: [256, 512]
   resolution_milestones: [5000]
-  camera_distance_range: [1.7, 1.9]
-  fovy_range: [70, 90]
+  camera_distance_range: [1.6, 1.8]
+  fovy_range: [60, 80]
   elevation_range: [-10, 10]
   camera_perturb: 0.
   center_perturb: 0.
@@ -27,7 +27,7 @@ system:
   geometry_type: "implicit-volume"
   geometry:
     radius: 2.0
-    normal_type: "refnerf"
+    normal_type: "analytic"
 
     # the density initialization proposed in the DreamFusion paper
     # does not work very well
@@ -71,11 +71,11 @@ system:
 
   prompt_processor_type: "stable-diffusion-prompt-processor"
   prompt_processor:
-    pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
+    #pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
     prompt: ???
     front_threshold: 30.
     back_threshold: 30.
-    #pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/cjiang_anything_v5"
+    pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/cjiang_anything_v5"
     # pretrained_model_name_or_path: "stabilityai/stable-diffusion-2-1-base"
     #pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/cjiang_anything_v5"
 
@@ -102,13 +102,13 @@ system:
 
   guidance_type: "stable-diffusion-controlnet-guidance"
   guidance:
-    pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
-    #pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/cjiang_anything_v5"
+    #pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
+    pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/cjiang_anything_v5"
     control_type: "openpose"
     min_step_percent: 0.2
     max_step_percent: 0.8
-    guidance_scale: 100.
-    condition_scale: 1.5
+    guidance_scale: 50.
+    condition_scale: 1.2
     use_sds: 1
 
   # guidance_type: "stable-diffusion-guidance"

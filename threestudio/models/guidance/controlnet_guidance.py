@@ -60,8 +60,8 @@ class ControlNetGuidance(BaseObject):
         elif self.cfg.control_type == "canny":
             controlnet_name_or_path = "lllyasviel/control_v11p_sd15_canny"
         elif self.cfg.control_type == "openpose":
-            #controlnet_name_or_path = "lllyasviel/control_v11p_sd15_openpose"
-            controlnet_name_or_path = "lllyasviel/sd-controlnet-openpose"
+            controlnet_name_or_path = "lllyasviel/control_v11p_sd15_openpose"
+            #controlnet_name_or_path = "lllyasviel/sd-controlnet-openpose"
 
         self.weights_dtype = (
             torch.float16 if self.cfg.half_precision_weights else torch.float32
@@ -387,7 +387,7 @@ class ControlNetGuidance(BaseObject):
         # image_cond = F.interpolate(
         #     image_cond, (RH, RW), mode="bilinear", align_corners=False
         # )
-        # # save image cond
+        # save image cond
         # temp_cond = (
         #     (image_cond[0].detach().cpu().numpy() * 255.).astype(np.uint8).copy()
         # )
