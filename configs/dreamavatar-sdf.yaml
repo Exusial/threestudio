@@ -34,6 +34,8 @@ system:
     shape_init: smpl
     smpl_model_dir: /home/phy/diffusion/avatars/models
     smpl_out_dir: smpl.obj
+    smpl_gender: female
+
   # material_type: "diffuse-with-point-light-material"
   # material:
   #   ambient_only_steps: 0
@@ -62,16 +64,16 @@ system:
     front_threshold: 30.
     back_threshold: 30.
 
-  guidance_type: "stable-diffusion-vsd-guidance"
+  guidance_type: "stable-diffusion-controlnet-guidance"
   guidance:
-    pretrained_model_name_or_path: "stabilityai/stable-diffusion-2-1-base"
-    pretrained_model_name_or_path_lora: "stabilityai/stable-diffusion-2-1"
-    guidance_scale: 7.5
-    # weighting_strategy: sds
-    min_step_percent: 0.02
-    max_step_percent: 0.98
-    max_step_percent_annealed: 0.5
-    anneal_start_step: 5000
+    #pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
+    pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/cjiang_anything_v5"
+    control_type: "openpose"
+    min_step_percent: 0.2
+    max_step_percent: 0.8
+    guidance_scale: 100.
+    condition_scale: 1.2
+    use_sds: 1
 
   loggers:
     wandb:

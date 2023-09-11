@@ -2,6 +2,7 @@ import os
 from dataclasses import dataclass, field
 
 import numpy as np
+import trimesh
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -22,6 +23,7 @@ from threestudio.utils.ops import scale_tensor
 from threestudio.utils.typing import *
 
 import pytorch_volumetric as pv
+# import pysdf
 from threestudio.utils.smpl_utils import convert_sdf_to_alpha, save_smpl_to_obj
 
 @threestudio.register("tetrahedra-sdf-grid")
@@ -63,6 +65,7 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
         fix_geometry: bool = False
         smpl_model_dir: str = "/home/zjp/zjp/threestudio"
         smpl_out_dir: str = "smpl.obj"
+        smpl_gender: str = "neutral"
         n_particles: int = 1
 
     cfg: Config
@@ -83,7 +86,9 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
         self.deformation: Optional[Float[Tensor, "Nv 3"]]
 
         if self.cfg.shape_init is not None and self.cfg.shape_init == "smpl":
-            save_smpl_to_obj(self.cfg.smpl_model_dir, out_dir=self.cfg.smpl_out_dir, bbox=None)
+            save_smpl_to_obj(self.cfg.smpl_model_dir, out_dir=self.cfg.smpl_out_dir, gender=self.cfg.smpl_gender, bbox=None)
+            self.mesh = trimesh.load(self.cfg.smpl_out_dir)
+            # self.sdf = pysdf.SDF(self.mesh.vertices, self.mesh.faces)
             obj = pv.MeshObjectFactory(self.cfg.smpl_out_dir)
             self.init_sdf = pv.MeshSDF(obj)
         else:
@@ -123,6 +128,7 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
             else:
                 self.deformation = None
         if self.init_sdf is not None:
+            # sdf_val = -torch.tensor(self.sdf(points.detach().to("cpu").numpy())).to(points.device)
             self.sdf_bias = torch.nn.Parameter(self.init_sdf(self.isosurface_helper.grid_vertices)[0].unsqueeze(-1))
             self.sdf_bias.requires_grad = False
             # self.export_sdf_shape()

@@ -46,7 +46,9 @@ class NeRFVolumeRenderer(VolumeRenderer):
 
         # for importance
         num_samples_per_ray_importance: int = 64
-
+        
+        enable_bbox_clamp: bool = False
+        smpl_dir: str = ""
     cfg: Config
 
     def configure(
@@ -56,6 +58,13 @@ class NeRFVolumeRenderer(VolumeRenderer):
         background: BaseBackground,
     ) -> None:
         super().configure(geometry, material, background)
+        self.near_plane = self.cfg.near_plane
+        self.far_plane = self.cfg.far_plane
+        if self.cfg.enable_bbox_clamp:
+            import trimesh
+            smpl_mesh = trimesh.load(self.cfg.smpl_dir)
+            self.bbox = torch.tensor(smpl_mesh.bounds).float().to(self.device)
+            self.bbox = self.bbox + torch.tensor([[-0.15, -0.15, -0.15], [0.15, 0.15, 0.15]]).float().to(self.device)
         if self.cfg.estimator == "occgrid":
             self.estimator = nerfacc.OccGridEstimator(
                 roi_aabb=self.bbox.view(-1), resolution=32, levels=1
@@ -277,7 +286,8 @@ class NeRFVolumeRenderer(VolumeRenderer):
         t_positions = (t_starts + t_ends) / 2.0
         positions = t_origins + t_dirs * t_positions
         t_intervals = t_ends - t_starts
-
+        position_filtered = ((positions < self.bbox[0]) | (positions > self.bbox[1])).all(dim=-1)
+        print(position_filtered.sum(), position_filtered.shape)
         if self.training:
             geo_out = self.geometry(
                 positions, output_normal=self.material.requires_normal
@@ -308,7 +318,8 @@ class NeRFVolumeRenderer(VolumeRenderer):
             comp_rgb_bg = chunk_batch(
                 self.background, self.cfg.eval_chunk_size, dirs=rays_d
             )
-
+        print(geo_out["density"].shape)
+        geo_out["density"][position_filtered] = 0
         weights: Float[Tensor, "Nr 1"]
         weights_, trans_, _ = nerfacc.render_weight_from_density(
             t_starts[..., 0],

@@ -46,6 +46,7 @@ def main(args, extras) -> None:
     env_gpus = list(env_gpus_str.split(",")) if env_gpus_str else []
     selected_gpus = [0]
 
+    import ipdb
     # Always rely on CUDA_VISIBLE_DEVICES if specific GPU ID(s) are specified.
     # As far as Pytorch Lightning is concerned, we always use all available GPUs
     # (possibly filtered by CUDA_VISIBLE_DEVICES).
@@ -97,7 +98,6 @@ def main(args, extras) -> None:
     # parse YAML config to OmegaConf
     cfg: ExperimentConfig
     cfg = load_config(args.config, cli_args=extras, n_gpus=n_gpus)
-
     # set a different seed for each device
     pl.seed_everything(cfg.seed + get_rank(), workers=True)
 
@@ -106,7 +106,6 @@ def main(args, extras) -> None:
         cfg.system, resumed=cfg.resume is not None
     )
     system.set_save_dir(os.path.join(cfg.trial_dir, "save"))
-
     if args.gradio:
         fh = logging.FileHandler(os.path.join(cfg.trial_dir, "logs"))
         fh.setLevel(logging.INFO)
@@ -114,7 +113,7 @@ def main(args, extras) -> None:
             fh.setLevel(logging.DEBUG)
         fh.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
         logger.addHandler(fh)
-
+    
     callbacks = []
     if args.train:
         callbacks += [
@@ -143,7 +142,7 @@ def main(args, extras) -> None:
         with open(file, "w") as f:
             for line in lines:
                 f.write(line + "\n")
-
+    
     loggers = []
     if args.train:
         # make tensorboard logging dir to suppress warning
@@ -160,7 +159,7 @@ def main(args, extras) -> None:
                 ["python " + " ".join(sys.argv), str(args)],
             )
         )()
-
+    
     trainer = Trainer(
         callbacks=callbacks,
         logger=loggers,
@@ -177,6 +176,7 @@ def main(args, extras) -> None:
         system.set_resume_status(ckpt["epoch"], ckpt["global_step"])
 
     if args.train:
+        
         trainer.fit(system, datamodule=dm, ckpt_path=cfg.resume)
         trainer.test(system, datamodule=dm)
         if args.gradio:

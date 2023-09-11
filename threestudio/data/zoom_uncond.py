@@ -102,7 +102,7 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         self.head_bbox = torch.tensor(zoom_bbox_in_apos())
         #CHANGE
         self.id=0
-        smpl_model = smplx.create("/home/ldy/ldy/smplx_openpose/wiki/assets/SMPLX_OpenPose_mapping/models",model_type="smplx")
+        smpl_model = smplx.create("/home/ldy/ldy/smplx_openpose/wiki/assets/SMPLX_OpenPose_mapping/models",model_type="smplx",num_betas=10)
         smpl_data = joblib.load("/home/penghy/diffusion/avatars/sketchhuman/extern/PyMAF-X/output/anime/output.pkl")
         betas = torch.tensor(smpl_data["betas"][0]).reshape(1, 10)
         pose = torch.tensor(smpl_data["pose"][0].reshape(1,72)[:,3:66])
@@ -364,7 +364,7 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
             "height": self.height,
             "width": self.width,
             "rendered_smpl": smpl_map,
-            "rendered_openpose": openpose_map,
+            "rendered_openpose": torch.from_numpy(openpose_map).to(mvp_mtx.device),
         }
         for k, v in focus_rays.items():
             batch[k] = v

@@ -60,8 +60,8 @@ class ControlNetGuidance(BaseObject):
         elif self.cfg.control_type == "canny":
             controlnet_name_or_path = "lllyasviel/control_v11p_sd15_canny"
         elif self.cfg.control_type == "openpose":
-            controlnet_name_or_path = "lllyasviel/control_v11p_sd15_openpose"
-            #controlnet_name_or_path = "lllyasviel/sd-controlnet-openpose"
+            # controlnet_name_or_path = "lllyasviel/control_v11p_sd15_openpose"
+            controlnet_name_or_path = "/home/penghy/.cache/huggingface/hub/models--lllyasviel--control_v11p_sd15_openpose/snapshots/9ae9f970358db89e211b87c915f9535c6686d5ba"
 
         self.weights_dtype = (
             torch.float16 if self.cfg.half_precision_weights else torch.float32
@@ -83,7 +83,7 @@ class ControlNetGuidance(BaseObject):
         self.pipe = StableDiffusionControlNetPipeline.from_pretrained(
             self.cfg.pretrained_model_name_or_path, controlnet=controlnet, **pipe_kwargs
         ).to(self.device)
-        self.pipe.enable_model_cpu_offload()
+        # self.pipe.enable_model_cpu_offload()
         self.scheduler = DDIMScheduler.from_pretrained(
             self.cfg.ddim_scheduler_name_or_path,
             subfolder="scheduler",
@@ -126,9 +126,10 @@ class ControlNetGuidance(BaseObject):
         elif self.cfg.control_type == "canny":
             self.preprocessor = CannyDetector()
         elif self.cfg.control_type == "openpose":
-            self.preprocessor = OpenposeDetector.from_pretrained(
-                "lllyasviel/ControlNet"
-            )
+            # self.preprocessor = OpenposeDetector.from_pretrained(
+            #     "lllyasviel/ControlNet"
+            # )
+            pass
 
         for p in self.vae.parameters():
             p.requires_grad_(False)
