@@ -137,7 +137,6 @@ class BaseImplicitGeometry(BaseGeometry):
             return field, deformation
 
         assert self.isosurface_helper is not None
-        print(self.isosurface_helper.grid_vertices)
         field, deformation = chunk_batch(
             batch_func,
             self.cfg.isosurface_chunk,

@@ -95,7 +95,7 @@ class DreamAvatarControl(BaseLift3DSystem):
         pass
 
     def training_step(self, batch, batch_idx):
-        # if batch_idx == self.cfg.part_stage:
+        # if batch_idx == self.cfg.part_stage and self.cfg.zoombale:
         #     self.cfg.use_vsd = 0
         #     del self.guidance 
         #     self.guidance = self.sds_guidance
@@ -105,8 +105,8 @@ class DreamAvatarControl(BaseLift3DSystem):
         # FB
         # self.prompt_processor.prompt = "Full body photo of " + origin_prompt
         #import pdb; pdb.set_trace()
-        rendered_openpose = torch.from_numpy(batch["rendered_openpose"].copy())
-        rendered_openpose = rendered_openpose.unsqueeze(0)
+        # rendered_openpose = torch.from_numpy(batch["rendered_openpose"].copy())
+        rendered_openpose = batch["rendered_openpose"].unsqueeze(0)
         # import pdb; pdb.set_trace()
         if self.cfg.use_vsd:
             guidance_out = self.guidance(
@@ -121,7 +121,26 @@ class DreamAvatarControl(BaseLift3DSystem):
             guidance_out = self.guidance(
                 out["comp_rgb"], self.prompt_utils, **batch
             )
-
+        if self.cfg.zoomable and batch_idx >= self.cfg.part_stage:
+            # todo: add more part factorized process.
+            if "comp_rgb_head" in out:
+                self.prompt_processor.prompt = self.prompt_processor.preprocess_prompt("headshot of " + self.prompt_processor.part_prompt)
+                with torch.no_grad():
+                    part_guidance_out = self.guidance(
+                        out["comp_rgb_head"], self.prompt_utils, **batch, rgb_as_latents=False
+                    )
+                # debug head part?
+                cv2.imwrite("body.png", np.rint(out["comp_rgb"][0].detach().cpu().numpy() * 255))
+                cv2.imwrite("head.png", np.rint(out["comp_rgb_head"][0].detach().cpu().numpy() * 255))
+            if "comp_rgb_torso" in out:
+                self.prompt_processor.prompt = self.prompt_processor.preprocess_prompt("torso of " + self.prompt_processor.part_prompt)
+                with torch.no_grad():
+                    part_guidance_out = self.guidance(
+                        out["comp_rgb_torso"], self.prompt_utils, **batch, rgb_as_latents=False
+                    )
+                # debug torso part?
+                cv2.imwrite("body.png", np.rint(out["comp_rgb"][0].detach().cpu().numpy() * 255))
+                cv2.imwrite("torso.png", np.rint(out["comp_rgb_torso"][0].detach().cpu().numpy() * 255))
         for name, value in guidance_out.items():
             self.log(f"train/{name}", value)
             if name.startswith("loss_"):
@@ -133,6 +152,7 @@ class DreamAvatarControl(BaseLift3DSystem):
             loss += loss_sparsity * self.C(self.cfg.loss.lambda_sparsity)
 
             opacity_clamped = out["opacity"].clamp(1.0e-3, 1.0 - 1.0e-3)
+            # cv2.imwrite("opacity.png", np.rint(opacity_clamped[0].detach().cpu().numpy() * 255))
             loss_opaque = binary_cross_entropy(opacity_clamped, opacity_clamped)
             self.log("train/loss_opaque", loss_opaque)
             loss += loss_opaque * self.C(self.cfg.loss.lambda_opaque)

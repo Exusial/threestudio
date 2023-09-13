@@ -13,9 +13,9 @@
 
 export HTTPS_PROXY=http://ddns.shadowhome.top:7890
 # for geo part
-# python launch.py --config configs/dreamavatar-sds-control.yaml --train --gpu 6 \
-# system.prompt_processor.part_prompt="masterpiece,best quality,Cjiang,1gril" \
-# system.prompt_processor.prompt="masterpiece,best quality,Cjiang,1gril"
+python launch.py --config configs/dreamavatar-sds-control.yaml --train --gpu 6 \
+system.prompt_processor.part_prompt="masterpiece,best quality,Cjiang,1gril" \
+system.prompt_processor.prompt="masterpiece,best quality,Cjiang,1gril"
 # system.prompt_processor.prompt="Elsa"
 #system.prompt_processor.prompt="masterpiece, best quality, Cjiang, 1gril, full body, white background"
 #system.prompt_processor.prompt="Elsa"
@@ -23,6 +23,6 @@ export HTTPS_PROXY=http://ddns.shadowhome.top:7890
 #system.prompt_processor.part_prompt="masterpiece, best quality, Cjiang, 1gril, looking at view, full body, white background"
 #system.geometry_convert_from=/home/penghy/diffusion/threestudio/outputs/dreamavatar-vsd-zoom/Elsa@20230803-170446/ckpts/last.ckpt \
 #system.geometry_convert_override.isosurface_threshold=10.
-python launch.py --config configs/dreamavatar-sds-control.yaml --train --gpu 5 \
-system.prompt_processor.part_prompt="elsa" \
-system.prompt_processor.prompt="elsa"
+# python launch.py --config configs/dreamavatar-sds-control.yaml --train --gpu 1 \
+# system.prompt_processor.part_prompt="elsa" \
+# system.prompt_processor.prompt="elsa"

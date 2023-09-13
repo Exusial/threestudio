@@ -59,7 +59,7 @@ class ImplicitVolume(BaseImplicitGeometry):
         smpl_model_dir: str = "/home/zjp/zjp/threestudio"
         smpl_out_dir: str = "smpl.obj"
         smpl_gender: str = "neutral"
-
+        sdf_threshold: float = 0.2
     cfg: Config
 
     def configure(self) -> None:
@@ -121,7 +121,7 @@ class ImplicitVolume(BaseImplicitGeometry):
             raise ValueError(f"Unknown density bias {self.cfg.density_bias}")
         raw_density: Float[Tensor, "*N 1"] = density + density_bias
         density = get_activation(self.cfg.density_activation)(raw_density)
-        return raw_density, density
+        return raw_density, density, sdf_val
 
     def forward(
         self, points: Float[Tensor, "*N Di"], output_normal: bool = False
@@ -138,10 +138,11 @@ class ImplicitVolume(BaseImplicitGeometry):
 
         enc = self.encoding(points.view(-1, self.cfg.n_input_dims))
         density = self.density_network(enc).view(*points.shape[:-1], 1)
-        raw_density, density = self.get_activated_density(points_unscaled, density)
+        raw_density, density, sdf_val = self.get_activated_density(points_unscaled, density)
 
         output = {
             "density": density,
+            "sdf_val": sdf_val
         }
 
         if self.cfg.n_feature_dims > 0:
@@ -230,7 +231,7 @@ class ImplicitVolume(BaseImplicitGeometry):
             self.encoding(points.reshape(-1, self.cfg.n_input_dims))
         ).reshape(*points.shape[:-1], 1)
 
-        _, density = self.get_activated_density(points_unscaled, density)
+        _, density, _ = self.get_activated_density(points_unscaled, density)
         return density
 
     def forward_field(
@@ -240,7 +241,9 @@ class ImplicitVolume(BaseImplicitGeometry):
             threestudio.warn(
                 f"{self.__class__.__name__} does not support isosurface_deformable_grid. Ignoring."
             )
+        sdf_val = -torch.tensor(self.sdf(points.detach().to("cpu").numpy())).to(points.device)
         density = self.forward_density(points)
+        density[sdf_val > self.cfg.sdf_threshold] = 0
         density = torch.clamp(density, max=50.0)
         return density, None
 
@@ -273,7 +276,7 @@ class ImplicitVolume(BaseImplicitGeometry):
             )
         self._initilize_isosurface_helper()
         if self.cfg.density_bias == "smpl":
-            bbox = torch.tensor(np.array([self.mesh.vertices.min(axis=0)-0.45, self.mesh.vertices.max(axis=0)+0.45])).to(self.bbox.device)
+            bbox = torch.tensor(np.array([self.mesh.vertices.min(axis=0)-0.2, self.mesh.vertices.max(axis=0)+0.2])).to(self.bbox.device)
         else:
             bbox = self.bbox
         if self.cfg.isosurface_coarse_to_fine and not self.cfg.density_bias == "smpl":
