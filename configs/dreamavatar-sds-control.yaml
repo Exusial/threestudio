@@ -71,7 +71,8 @@ system:
 
   prompt_processor_type: "stable-diffusion-prompt-processor"
   prompt_processor:
-    #pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
+    # pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
+    pretrained_model_name_or_path: "stablediffusionapi/anything-v5"
     prompt: ???
     front_threshold: 30.
     back_threshold: 30.
@@ -104,8 +105,15 @@ system:
 
   guidance_type: "stable-diffusion-controlnet-guidance"
   guidance:
+<<<<<<< Updated upstream
     #pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
     pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/Cjiang_anything_v5"
+=======
+    pretrained_model_name_or_path: "stablediffusionapi/anything-v5"
+    #pretrained_model_name_or_path: "stabilityai/stable-diffusion-2-1-base"
+    # pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
+    #pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/cjiang_anything_v5"
+>>>>>>> Stashed changes
     control_type: "openpose"
     min_step_percent: 0.2
     max_step_percent: 0.8

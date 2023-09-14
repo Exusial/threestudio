@@ -74,8 +74,8 @@ class VSDControlNetGuidance(BaseModule):
 
         controlnet_name_or_path: str
         if self.cfg.control_type == "openpose":
-            controlnet_name_or_path = "lllyasviel/control_v11p_sd15_openpose"
-            #controlnet_name_or_path = "lllyasviel/sd-controlnet-openpose"
+            #controlnet_name_or_path = "lllyasviel/control_v11p_sd15_openpose"
+            controlnet_name_or_path = "lllyasviel/sd-controlnet-openpose"
 
         self.weights_dtype = (
             torch.float16 if self.cfg.half_precision_weights else torch.float32
@@ -108,13 +108,13 @@ class VSDControlNetGuidance(BaseModule):
             pipe_lora: StableDiffusionPipeline
         
         # Hardcode here to utilize local models
-        pipe = StableDiffusionControlNetPipeline.from_pretrained(
-            self.cfg.pretrained_model_name_or_path, controlnet=controlnet, **pipe_kwargs
-        ).to(self.device)
-        # pipe = StableDiffusionPipeline.from_pretrained(
-        #     self.cfg.pretrained_model_name_or_path,
-        #     **pipe_kwargs,
+        # pipe = StableDiffusionControlNetPipeline.from_pretrained(
+        #     self.cfg.pretrained_model_name_or_path, controlnet=controlnet, **pipe_kwargs
         # ).to(self.device)
+        pipe = StableDiffusionPipeline.from_pretrained(
+            self.cfg.pretrained_model_name_or_path,
+            **pipe_kwargs,
+        ).to(self.device)
         if (
             self.cfg.pretrained_model_name_or_path
             == self.cfg.pretrained_model_name_or_path_lora
@@ -172,7 +172,7 @@ class VSDControlNetGuidance(BaseModule):
             p.requires_grad_(False)
         for p in self.unet_lora.parameters():
             p.requires_grad_(False)
-        self.controlnet = self.pipe.controlnet.eval()
+        # self.controlnet = self.pipe.controlnet.eval()
 
         # FIXME: hard-coded dims
         self.camera_embedding = ToWeightsDType(
@@ -291,6 +291,7 @@ class VSDControlNetGuidance(BaseModule):
         cross_attention_kwargs: Optional[Dict[str, Any]] = None,
         generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
     ) -> Float[Tensor, "B H W 3"]:
+        raise NotImplementedError
         vae_scale_factor = 2 ** (len(pipe.vae.config.block_out_channels) - 1)
         height = height or pipe.unet.config.sample_size * vae_scale_factor
         width = width or pipe.unet.config.sample_size * vae_scale_factor
@@ -439,31 +440,32 @@ class VSDControlNetGuidance(BaseModule):
         condition_scale: float = 7.5,
         image_cond: Float[Tensor, "B 3 H W"] = None,
     ) -> Float[Tensor, "..."]:
+        assert image_cond is not None
         input_dtype = latents.dtype
-        # return unet(
-        #     latents.to(self.weights_dtype),
-        #     t.to(self.weights_dtype),
-        #     encoder_hidden_states=encoder_hidden_states.to(self.weights_dtype),
-        #     class_labels=class_labels,
-        #     cross_attention_kwargs=cross_attention_kwargs,
-        # ).sample.to(input_dtype)
-        down_block_res_samples, mid_block_res_sample = self.controlnet(
-            latents.to(self.weights_dtype),
-            t.to(self.weights_dtype),
-            encoder_hidden_states=encoder_hidden_states.to(self.weights_dtype),
-            controlnet_cond=image_cond.to(self.weights_dtype),
-            conditioning_scale=condition_scale,
-            return_dict=False,
-        )
         return unet(
             latents.to(self.weights_dtype),
             t.to(self.weights_dtype),
             encoder_hidden_states=encoder_hidden_states.to(self.weights_dtype),
-            cross_attention_kwargs=cross_attention_kwargs,
             class_labels=class_labels,
-            down_block_additional_residuals=down_block_res_samples,
-            mid_block_additional_residual=mid_block_res_sample,
+            cross_attention_kwargs=cross_attention_kwargs,
         ).sample.to(input_dtype)
+        # down_block_res_samples, mid_block_res_sample = self.controlnet(
+        #     latents.to(self.weights_dtype),
+        #     t.to(self.weights_dtype),
+        #     encoder_hidden_states=encoder_hidden_states.to(self.weights_dtype),
+        #     controlnet_cond=image_cond.to(self.weights_dtype),
+        #     conditioning_scale=condition_scale,
+        #     return_dict=False,
+        # )
+        # return unet(
+        #     latents.to(self.weights_dtype),
+        #     t.to(self.weights_dtype),
+        #     encoder_hidden_states=encoder_hidden_states.to(self.weights_dtype),
+        #     cross_attention_kwargs=cross_attention_kwargs,
+        #     class_labels=class_labels,
+        #     down_block_additional_residuals=down_block_res_samples,
+        #     mid_block_additional_residual=mid_block_res_sample,
+        # ).sample.to(input_dtype)
 
     @torch.cuda.amp.autocast(enabled=False)
     def encode_images(

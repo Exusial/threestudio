@@ -286,9 +286,8 @@ class NeRFVolumeRenderer(VolumeRenderer):
         t_positions = (t_starts + t_ends) / 2.0
         positions = t_origins + t_dirs * t_positions
         t_intervals = t_ends - t_starts
-        # density_grid can work
-        # position_filtered = ((positions < self.bbox[0]) | (positions > self.bbox[1])).any(dim=-1)
-        # import ipdb
+        position_filtered = ((positions < self.bbox[0]) | (positions > self.bbox[1])).all(dim=-1)
+        #print(position_filtered.sum(), position_filtered.shape)
         if self.training:
             geo_out = self.geometry(
                 positions, output_normal=self.material.requires_normal
@@ -325,9 +324,8 @@ class NeRFVolumeRenderer(VolumeRenderer):
             comp_rgb_bg = chunk_batch(
                 self.background, self.cfg.eval_chunk_size, dirs=rays_d
             )
-            sdf_filtered = geo_out["sdf_val"] > self.cfg.sdf_threshold
-            index_filtered = sdf_filtered
-        geo_out["density"][index_filtered] = 0
+        #print(geo_out["density"].shape)
+        geo_out["density"][position_filtered] = 0
         weights: Float[Tensor, "Nr 1"]
         weights_, trans_, _ = nerfacc.render_weight_from_density(
             t_starts[..., 0],

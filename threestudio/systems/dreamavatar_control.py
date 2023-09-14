@@ -105,8 +105,9 @@ class DreamAvatarControl(BaseLift3DSystem):
         # FB
         # self.prompt_processor.prompt = "Full body photo of " + origin_prompt
         #import pdb; pdb.set_trace()
-        # rendered_openpose = torch.from_numpy(batch["rendered_openpose"].copy())
-        rendered_openpose = batch["rendered_openpose"].unsqueeze(0)
+        #rendered_openpose = torch.from_numpy(batch["rendered_openpose"].copy())
+        rendered_openpose = batch["rendered_openpose"].clone()
+        rendered_openpose = rendered_openpose.unsqueeze(0)
         # import pdb; pdb.set_trace()
         if self.cfg.use_vsd:
             guidance_out = self.guidance(
