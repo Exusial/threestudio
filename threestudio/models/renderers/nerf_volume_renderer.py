@@ -46,7 +46,10 @@ class NeRFVolumeRenderer(VolumeRenderer):
 
         # for importance
         num_samples_per_ray_importance: int = 64
-
+        
+        enable_bbox_clamp: bool = False
+        smpl_dir: str = ""
+        sdf_threshold: float = 0.2
     cfg: Config
 
     def configure(
@@ -56,6 +59,13 @@ class NeRFVolumeRenderer(VolumeRenderer):
         background: BaseBackground,
     ) -> None:
         super().configure(geometry, material, background)
+        self.near_plane = self.cfg.near_plane
+        self.far_plane = self.cfg.far_plane
+        if self.cfg.enable_bbox_clamp:
+            import trimesh
+            smpl_mesh = trimesh.load(self.cfg.smpl_dir)
+            self.bbox = torch.tensor(smpl_mesh.bounds).float().to(self.device)
+            self.bbox = self.bbox + torch.tensor([[-0.1, -0.1, -0.1], [0.1, 0.1, 0.1]]).float().to(self.device)
         if self.cfg.estimator == "occgrid":
             self.estimator = nerfacc.OccGridEstimator(
                 roi_aabb=self.bbox.view(-1), resolution=32, levels=1
@@ -149,7 +159,6 @@ class NeRFVolumeRenderer(VolumeRenderer):
                         early_stop_eps=0,
                     )
             else:
-
                 def sigma_fn(t_starts, t_ends, ray_indices):
                     t_starts, t_ends = t_starts[..., None], t_ends[..., None]
                     t_origins = rays_o_flatten[ray_indices]
@@ -277,7 +286,8 @@ class NeRFVolumeRenderer(VolumeRenderer):
         t_positions = (t_starts + t_ends) / 2.0
         positions = t_origins + t_dirs * t_positions
         t_intervals = t_ends - t_starts
-
+        position_filtered = ((positions < self.bbox[0]) | (positions > self.bbox[1])).all(dim=-1)
+        #print(position_filtered.sum(), position_filtered.shape)
         if self.training:
             geo_out = self.geometry(
                 positions, output_normal=self.material.requires_normal
@@ -290,6 +300,12 @@ class NeRFVolumeRenderer(VolumeRenderer):
                 **kwargs
             )
             comp_rgb_bg = self.background(dirs=rays_d)
+            sdf_filtered = geo_out["sdf_val"] > self.cfg.sdf_threshold
+            # print(sdf_filtered.shape, sdf_filtered.sum(), self.geometry.sdf_val.shape)
+            # print(position_filtered.sum())
+            index_filtered = sdf_filtered
+            # print(index_filtered.sum())
+            # print(positions.shape, sdf_filtered.shape)
         else:
             geo_out = chunk_batch(
                 self.geometry,
@@ -308,7 +324,8 @@ class NeRFVolumeRenderer(VolumeRenderer):
             comp_rgb_bg = chunk_batch(
                 self.background, self.cfg.eval_chunk_size, dirs=rays_d
             )
-
+        #print(geo_out["density"].shape)
+        geo_out["density"][position_filtered] = 0
         weights: Float[Tensor, "Nr 1"]
         weights_, trans_, _ = nerfacc.render_weight_from_density(
             t_starts[..., 0],

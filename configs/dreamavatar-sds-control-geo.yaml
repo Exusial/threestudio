@@ -1,0 +1,127 @@
+name: "dreamavatar-sds-control-geo"
+tag: "${rmspace:${system.prompt_processor.prompt},_}"
+exp_root_dir: "outputs"
+seed: 0
+
+data_type: "zoom-random-camera-datamodule"
+data:
+  batch_size: 1
+  width: [512, 768]
+  height: [512, 768]
+  resolution_milestones: [5000]
+  camera_distance_range: [1.6, 1.8]
+  fovy_range: [60, 80]
+  elevation_range: [-10, 10]
+  camera_perturb: 0.
+  center_perturb: 0.
+  up_perturb: 0.
+  eval_camera_distance: 2.0
+  eval_fovy_deg: 70.
+  focus_mode: 0
+  focus_camera_distance: 0.6
+
+system_type: "dreamavatar-control-system"
+system:
+  zoomable: 0
+  use_vsd: 0
+  geometry_convert_from: ???
+  geometry_convert_inherit_texture: true
+  geometry_type: "tetrahedra-sdf-grid"
+  geometry:
+    radius: 2.0 # consistent with coarse
+    isosurface_resolution: 128
+    isosurface_deformable_grid: true
+    pos_encoding_config: # consistent with coarse, no progressive band
+      otype: HashGrid
+      n_levels: 16
+      n_features_per_level: 2
+      log2_hashmap_size: 19
+      base_resolution: 16
+      per_level_scale: 1.4472692374403782 # max resolution 4096
+    fix_geometry: false # optimize grid sdf and deformation
+
+  prompt_processor_type: "stable-diffusion-prompt-processor"
+  prompt_processor:
+    #pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
+    prompt: ???
+    front_threshold: 30.
+    back_threshold: 30.
+    pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/Cjiang_anything_v5"
+    # pretrained_model_name_or_path: "stabilityai/stable-diffusion-2-1-base"
+    #pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/cjiang_anything_v5"
+
+  # material_type: "diffuse-with-point-light-material"
+  # material:
+  #   ambient_only_steps: 100001
+  #   albedo_activation: sigmoid
+
+  material_type: "diffuse-with-point-light-material"
+  material:
+    ambient_only_steps: 0
+    soft_shading: true
+
+  background_type: "neural-environment-map-background"
+  background:
+    color_activation: sigmoid
+
+  # background_type: "solid-color-background" # unused
+
+  renderer_type: "nvdiff-rasterizer"
+
+  guidance_type: "stable-diffusion-controlnet-guidance"
+  guidance:
+    #pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
+    pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/Cjiang_anything_v5"
+    control_type: "openpose"
+    min_step_percent: 0.2
+    max_step_percent: 0.8
+    guidance_scale: 100.
+    condition_scale: 1.2
+    use_sds: 1
+
+  sds_guidance_type: "stable-diffusion-guidance"
+  sds_guidance:
+    # pretrained_model_name_or_path: "runwayml/stable-diffusion-v1-5"
+    # pretrained_model_name_or_path: "stabilityai/stable-diffusion-2-1-base"
+    pretrained_model_name_or_path: "/home/ldy/ldy/dreambooth_test/Cjiang_anything_v5"
+    guidance_scale: 100.
+    weighting_strategy: sds
+    min_step_percent: 0.02
+    max_step_percent: 0.98
+
+  loggers:
+    wandb:
+      enable: false
+      project: 'threestudio'
+
+  loss:
+    lambda_sds: 1.
+    lambda_vsd: 1.
+    lambda_normal_consistency: 10000.
+    lambda_laplacian_smoothness: 10000.
+    lambda_lora: 1.
+  
+  optimizer:
+    name: AdamW
+    args:
+      lr: 0.02
+      betas: [0.9, 0.99]
+      eps: 1.e-15
+    params:
+      geometry:
+        lr: 0.01
+      background:
+        lr: 0.001
+
+trainer:
+  max_steps: 5000
+  log_every_n_steps: 1
+  num_sanity_val_steps: 0
+  val_check_interval: 100
+  enable_progress_bar: true
+  precision: 16-mixed
+
+checkpoint:
+  save_last: true # save at each validation time
+  save_top_k: -1
+  every_n_train_steps: ${trainer.max_steps}

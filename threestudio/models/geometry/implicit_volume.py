@@ -14,7 +14,11 @@ from threestudio.models.geometry.base import (
 from threestudio.models.networks import get_encoding, get_mlp
 from threestudio.utils.ops import get_activation
 from threestudio.utils.typing import *
+from threestudio.models.mesh import Mesh
 
+import pytorch_volumetric as pv
+import trimesh, pysdf
+from threestudio.utils.smpl_utils import convert_sdf_to_alpha, save_smpl_to_obj
 
 @threestudio.register("implicit-volume")
 class ImplicitVolume(BaseImplicitGeometry):
@@ -52,7 +56,10 @@ class ImplicitVolume(BaseImplicitGeometry):
 
         # automatically determine the threshold
         isosurface_threshold: Union[float, str] = 25.0
-
+        smpl_model_dir: str = "/home/zjp/zjp/threestudio"
+        smpl_out_dir: str = "smpl.obj"
+        smpl_gender: str = "neutral"
+        sdf_threshold: float = 0.2
     cfg: Config
 
     def configure(self) -> None:
@@ -69,10 +76,17 @@ class ImplicitVolume(BaseImplicitGeometry):
                 self.cfg.n_feature_dims,
                 self.cfg.mlp_network_config,
             )
-        if self.cfg.normal_type == "pred":
+        if self.cfg.normal_type == "pred" or self.cfg.normal_type == "refnerf":
             self.normal_network = get_mlp(
                 self.encoding.n_output_dims, 3, self.cfg.mlp_network_config
             )
+        if self.cfg.density_bias == "smpl":
+            save_smpl_to_obj(self.cfg.smpl_model_dir, out_dir=self.cfg.smpl_out_dir, bbox=self.bbox, gender=self.cfg.smpl_gender)
+            self.mesh = trimesh.load(self.cfg.smpl_out_dir)
+            self.sdf = pysdf.SDF(self.mesh.vertices, self.mesh.faces)
+
+           #obj = pv.MeshObjectFactory(self.cfg.smpl_out_dir)
+           #self.sdf = pv.MeshSDF(obj)
 
     def get_activated_density(
         self, points: Float[Tensor, "*N Di"], density: Float[Tensor, "*N 1"]
@@ -95,20 +109,25 @@ class ImplicitVolume(BaseImplicitGeometry):
                     - torch.sqrt((points**2).sum(dim=-1)) / self.cfg.density_blob_std
                 )[..., None]
             )
+        elif self.cfg.density_bias == "smpl":
+            sdf_val = -torch.tensor(self.sdf(points.detach().to("cpu").numpy())).to(points.device)
+            #import pdb; pdb.set_trace()
+            #with torch.no_grad():
+            #    sdf_val, sdf_grad = self.sdf(points)
+            density_bias = convert_sdf_to_alpha(sdf_val).unsqueeze(-1)
         elif isinstance(self.cfg.density_bias, float):
             density_bias = self.cfg.density_bias
         else:
             raise ValueError(f"Unknown density bias {self.cfg.density_bias}")
         raw_density: Float[Tensor, "*N 1"] = density + density_bias
         density = get_activation(self.cfg.density_activation)(raw_density)
-        return raw_density, density
+        return raw_density, density, sdf_val
 
     def forward(
         self, points: Float[Tensor, "*N Di"], output_normal: bool = False
     ) -> Dict[str, Float[Tensor, "..."]]:
         grad_enabled = torch.is_grad_enabled()
-
-        if output_normal and self.cfg.normal_type == "analytic":
+        if output_normal and (self.cfg.normal_type == "analytic" or self.cfg.normal_type == "refnerf"):
             torch.set_grad_enabled(True)
             points.requires_grad_(True)
 
@@ -119,10 +138,11 @@ class ImplicitVolume(BaseImplicitGeometry):
 
         enc = self.encoding(points.view(-1, self.cfg.n_input_dims))
         density = self.density_network(enc).view(*points.shape[:-1], 1)
-        raw_density, density = self.get_activated_density(points_unscaled, density)
+        raw_density, density, sdf_val = self.get_activated_density(points_unscaled, density)
 
         output = {
             "density": density,
+            "sdf_val": sdf_val
         }
 
         if self.cfg.n_feature_dims > 0:
@@ -185,9 +205,20 @@ class ImplicitVolume(BaseImplicitGeometry):
                 normal = F.normalize(normal, dim=-1)
                 if not grad_enabled:
                     normal = normal.detach()
+            elif self.cfg.normal_type == "refnerf":
+                ana_normal = -torch.autograd.grad(
+                    density,
+                    points_unscaled,
+                    grad_outputs=torch.ones_like(density),
+                    create_graph=True,
+                )[0]
+                normal = self.normal_network(enc).view(*points.shape[:-1], 3)
+                pred_normal = F.normalize(normal, dim=-1)
+                output.update({"normal": ana_normal, "shading_normal": pred_normal})
             else:
                 raise AttributeError(f"Unknown normal type {self.cfg.normal_type}")
-            output.update({"normal": normal, "shading_normal": normal})
+            if self.cfg.normal_type != "refnerf":
+                output.update({"normal": normal, "shading_normal": normal})
 
         torch.set_grad_enabled(grad_enabled)
         return output
@@ -200,7 +231,7 @@ class ImplicitVolume(BaseImplicitGeometry):
             self.encoding(points.reshape(-1, self.cfg.n_input_dims))
         ).reshape(*points.shape[:-1], 1)
 
-        _, density = self.get_activated_density(points_unscaled, density)
+        _, density, _ = self.get_activated_density(points_unscaled, density)
         return density
 
     def forward_field(
@@ -210,7 +241,10 @@ class ImplicitVolume(BaseImplicitGeometry):
             threestudio.warn(
                 f"{self.__class__.__name__} does not support isosurface_deformable_grid. Ignoring."
             )
+        sdf_val = -torch.tensor(self.sdf(points.detach().to("cpu").numpy())).to(points.device)
         density = self.forward_density(points)
+        density[sdf_val > self.cfg.sdf_threshold] = 0
+        density = torch.clamp(density, max=50.0)
         return density, None
 
     def forward_level(
@@ -234,6 +268,29 @@ class ImplicitVolume(BaseImplicitGeometry):
             }
         )
         return out
+
+    def isosurface(self) -> Mesh:
+        if not self.cfg.isosurface:
+            raise NotImplementedError(
+                "Isosurface is not enabled in the current configuration"
+            )
+        self._initilize_isosurface_helper()
+        if self.cfg.density_bias == "smpl":
+            bbox = torch.tensor(np.array([self.mesh.vertices.min(axis=0)-0.2, self.mesh.vertices.max(axis=0)+0.2])).to(self.bbox.device)
+        else:
+            bbox = self.bbox
+        if self.cfg.isosurface_coarse_to_fine and not self.cfg.density_bias == "smpl":
+            threestudio.debug("First run isosurface to get a tight bounding box ...")
+            with torch.no_grad():
+                mesh_coarse = self._isosurface(bbox)
+            vmin, vmax = mesh_coarse.v_pos.amin(dim=0), mesh_coarse.v_pos.amax(dim=0)
+            vmin_ = (vmin - (vmax - vmin) * 0.1).max(bbox[0])
+            vmax_ = (vmax + (vmax - vmin) * 0.1).min(bbox[1])
+            threestudio.debug("Run isosurface again with the tight bounding box ...")
+            mesh = self._isosurface(torch.stack([vmin_, vmax_], dim=0), fine_stage=True)
+        else:
+            mesh = self._isosurface(bbox)
+        return mesh
 
     @staticmethod
     @torch.no_grad()

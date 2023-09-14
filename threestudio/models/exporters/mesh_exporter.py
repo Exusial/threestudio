@@ -27,7 +27,7 @@ class MeshExporter(Exporter):
         texture_format: str = "jpg"
         xatlas_chart_options: dict = field(default_factory=dict)
         xatlas_pack_options: dict = field(default_factory=dict)
-        context_type: str = "gl"
+        context_type: str = "cuda"
 
     cfg: Config
 
@@ -45,7 +45,7 @@ class MeshExporter(Exporter):
 
         if self.cfg.fmt == "obj-mtl":
             return self.export_obj_with_mtl(mesh)
-        elif self.cfg.fmt == "obj":
+        elif self.cfg.fmt == "obj" or self.cfg.fmt == "ply":
             return self.export_obj(mesh)
         else:
             raise ValueError(f"Unsupported mesh export format: {self.cfg.fmt}")
@@ -170,6 +170,6 @@ class MeshExporter(Exporter):
 
         return [
             ExporterOutput(
-                save_name=f"{self.cfg.save_name}.obj", save_type="obj", params=params
+                save_name=f"{self.cfg.save_name}.{self.cfg.fmt}", save_type=f"{self.cfg.fmt}", params=params
             )
         ]

@@ -2,6 +2,7 @@ import os
 from dataclasses import dataclass, field
 
 import numpy as np
+import trimesh
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -21,6 +22,9 @@ from threestudio.utils.misc import broadcast
 from threestudio.utils.ops import scale_tensor
 from threestudio.utils.typing import *
 
+import pytorch_volumetric as pv
+# import pysdf
+from threestudio.utils.smpl_utils import convert_sdf_to_alpha, save_smpl_to_obj
 
 @threestudio.register("tetrahedra-sdf-grid")
 class TetrahedraSDFGrid(BaseExplicitGeometry):
@@ -59,6 +63,10 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
         force_shape_init: bool = False
         geometry_only: bool = False
         fix_geometry: bool = False
+        smpl_model_dir: str = "/home/zjp/zjp/threestudio"
+        smpl_out_dir: str = "smpl.obj"
+        smpl_gender: str = "neutral"
+        n_particles: int = 1
 
     cfg: Config
 
@@ -68,7 +76,7 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
         # this should be saved to state_dict, register as buffer
         self.isosurface_bbox: Float[Tensor, "2 3"]
         self.register_buffer("isosurface_bbox", self.bbox.clone())
-
+        self.sdf_bias = None
         self.isosurface_helper = MarchingTetrahedraHelper(
             self.cfg.isosurface_resolution,
             f"load/tets/{self.cfg.isosurface_resolution}_tets.npz",
@@ -77,12 +85,20 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
         self.sdf: Float[Tensor, "Nv 1"]
         self.deformation: Optional[Float[Tensor, "Nv 3"]]
 
+        if self.cfg.shape_init is not None and self.cfg.shape_init == "smpl":
+            save_smpl_to_obj(self.cfg.smpl_model_dir, out_dir=self.cfg.smpl_out_dir, gender=self.cfg.smpl_gender, bbox=None)
+            self.mesh = trimesh.load(self.cfg.smpl_out_dir)
+            # self.sdf = pysdf.SDF(self.mesh.vertices, self.mesh.faces)
+            obj = pv.MeshObjectFactory(self.cfg.smpl_out_dir)
+            self.init_sdf = pv.MeshSDF(obj)
+        else:
+            self.init_sdf = None
         if not self.cfg.fix_geometry:
             self.register_parameter(
                 "sdf",
                 nn.Parameter(
                     torch.zeros(
-                        (self.isosurface_helper.grid_vertices.shape[0], 1),
+                        (self.cfg.n_particles, self.isosurface_helper.grid_vertices.shape[0], 1),
                         dtype=torch.float32,
                     )
                 ),
@@ -91,7 +107,7 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
                 self.register_parameter(
                     "deformation",
                     nn.Parameter(
-                        torch.zeros_like(self.isosurface_helper.grid_vertices)
+                        torch.zeros(self.cfg.n_particles, self.isosurface_helper.grid_vertices.shape[0], self.isosurface_helper.grid_vertices.shape[1])
                     ),
                 )
             else:
@@ -111,7 +127,12 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
                 )
             else:
                 self.deformation = None
-
+        if self.init_sdf is not None:
+            # sdf_val = -torch.tensor(self.sdf(points.detach().to("cpu").numpy())).to(points.device)
+            self.sdf_bias = torch.nn.Parameter(self.init_sdf(self.isosurface_helper.grid_vertices)[0].unsqueeze(-1))
+            self.sdf_bias.requires_grad = False
+            # self.export_sdf_shape()
+            # exit()
         if not self.cfg.geometry_only:
             self.encoding = get_encoding(
                 self.cfg.n_input_dims, self.cfg.pos_encoding_config
@@ -123,7 +144,7 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
             )
 
         self.mesh: Optional[Mesh] = None
-
+        
     def initialize_shape(self) -> None:
         if self.cfg.shape_init is None and not self.cfg.force_shape_init:
             return
@@ -234,14 +255,25 @@ class TetrahedraSDFGrid(BaseExplicitGeometry):
         for param in self.parameters():
             broadcast(param, src=0)
 
+    def export_sdf_shape(self) -> None:
+        import trimesh
+        mesh = self.isosurface_helper(self.sdf, self.deformation)
+        mesh = trimesh.base.Trimesh(mesh.v_pos.cpu().detach().numpy(), mesh.t_pos_idx.cpu().detach().numpy())
+        mesh.export("test.obj")
+    
     def isosurface(self) -> Mesh:
         # return cached mesh if fix_geometry is True to save computation
         if self.cfg.fix_geometry and self.mesh is not None:
             return self.mesh
-        mesh = self.isosurface_helper(self.sdf, self.deformation)
+        self.particle_index = np.random.randint(self.cfg.n_particles)
+        if not self.sdf_bias is None:
+            mesh = self.isosurface_helper(self.sdf[self.particle_index] + self.sdf_bias, self.deformation[self.particle_index])
+        else:
+            mesh = self.isosurface_helper(self.sdf, self.deformation[self.particle_index])
         mesh.v_pos = scale_tensor(
             mesh.v_pos, self.isosurface_helper.points_range, self.isosurface_bbox
         )
+        mesh.v_pos = mesh.v_pos.float()
         if self.cfg.isosurface_remove_outliers:
             mesh = mesh.remove_outlier(self.cfg.isosurface_outlier_n_faces_threshold)
         self.mesh = mesh

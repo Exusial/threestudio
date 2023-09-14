@@ -438,6 +438,31 @@ class SaverMixin:
         mesh.export(save_path)
         return save_path
 
+    def save_ply(
+        self,
+        filename: str,
+        mesh: Mesh,
+        save_mat: bool = False,
+        save_normal: bool = False,
+        save_uv: bool = False,
+        save_vertex_color: bool = False,
+        map_Kd: Optional[Float[Tensor, "H W 3"]] = None,
+        map_Ks: Optional[Float[Tensor, "H W 3"]] = None,
+        map_Bump: Optional[Float[Tensor, "H W 3"]] = None,
+        map_format: str = "jpg",
+    ) -> None:
+        v_pos, t_pos_idx = self.convert_data(mesh.v_pos), self.convert_data(
+            mesh.t_pos_idx
+        )
+        out_mesh = trimesh.base.Trimesh()
+        out_mesh.vertices = v_pos
+        out_mesh.faces = t_pos_idx
+        if save_normal:
+            out_mesh.vertex_normals = self.convert_data(mesh.v_nrm)
+        if save_vertex_color:
+            out_mesh.visual.vertex_colors = self.convert_data(mesh.v_rgb)
+        out_mesh.export(self.get_save_path(filename))
+
     def save_obj(
         self,
         filename: str,

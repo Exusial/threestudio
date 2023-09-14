@@ -178,6 +178,7 @@ pyrightconfig.json
 .vscode/
 .threestudio_cache/
 outputs/
+smplx/
 outputs-gradio/
 
 # pretrained model weights
@@ -188,4 +189,10 @@ outputs-gradio/
 # wandb
 wandb/
 
+*.obj
+*.mp4
+*.png
+*.ply
+*.so
+*.pyx
 load/tets/256_tets.npz

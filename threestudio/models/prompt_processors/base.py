@@ -48,6 +48,11 @@ class PromptProcessorOutput:
     perp_neg_f_fs: Tuple[float, float, float]
     perp_neg_f_sf: Tuple[float, float, float]
 
+    text_embeddings_pooled: Optional[Float[Tensor, "N Np"]] = None
+    uncond_text_embeddings_pooled: Optional[Float[Tensor, "N Np"]] = None
+    text_embeddings_pooled_vd: Optional[Float[Tensor, "Nv N Np"]] = None
+    uncond_text_embeddings_pooled_vd: Optional[Float[Tensor, "Nv N Np"]] = None
+
     def get_text_embeddings(
         self,
         elevation: Float[Tensor, "B"],
@@ -76,6 +81,43 @@ class PromptProcessorOutput:
 
         # IMPORTANT: we return (cond, uncond), which is in different order than other implementations!
         return torch.cat([text_embeddings, uncond_text_embeddings], dim=0)
+
+    def get_text_embeddings_pooled(
+        self,
+        elevation: Float[Tensor, "B"],
+        azimuth: Float[Tensor, "B"],
+        camera_distances: Float[Tensor, "B"],
+        view_dependent_prompting: bool = True,
+    ) -> Float[Tensor, "BB N Nf"]:
+        if (
+            self.text_embeddings_pooled is None
+            or self.uncond_text_embeddings_pooled is None
+            or self.text_embeddings_pooled_vd is None
+            or self.uncond_text_embeddings_pooled_vd is None
+        ):
+            raise ValueError("Pooled text embeddings not available.")
+
+        batch_size = elevation.shape[0]
+
+        if view_dependent_prompting:
+            # Get direction
+            direction_idx = torch.zeros_like(elevation, dtype=torch.long)
+            for d in self.directions:
+                direction_idx[
+                    d.condition(elevation, azimuth, camera_distances)
+                ] = self.direction2idx[d.name]
+
+            # Get text embeddings
+            text_embeddings_pooled = self.text_embeddings_pooled_vd[direction_idx]  # type: ignore
+            uncond_text_embeddings_pooled = self.uncond_text_embeddings_pooled_vd[direction_idx]  # type: ignore
+        else:
+            text_embeddings_pooled = self.text_embeddings_pooled.expand(batch_size, -1, -1)  # type: ignore
+            uncond_text_embeddings_pooled = self.uncond_text_embeddings_pooled.expand(  # type: ignore
+                batch_size, -1, -1
+            )
+
+        # IMPORTANT: we return (cond, uncond), which is in different order than other implementations!
+        return torch.cat([text_embeddings_pooled, uncond_text_embeddings_pooled], dim=0)
 
     def get_text_embeddings_perp_neg(
         self,
@@ -208,7 +250,7 @@ class PromptProcessor(BaseObject):
         pretrained_model_name_or_path_prompt_debiasing: str = "bert-base-uncased"
         # index of words that can potentially be removed
         prompt_debiasing_mask_ids: Optional[List[int]] = None
-
+        part_prompt: str = None
     cfg: Config
 
     @rank_zero_only
@@ -297,6 +339,7 @@ class PromptProcessor(BaseObject):
             self.prompt_library = json.load(f)
         # use provided prompt or find prompt in library
         self.prompt = self.preprocess_prompt(self.cfg.prompt)
+        self.part_prompt = self.cfg.part_prompt
         # use provided negative prompt
         self.negative_prompt = self.cfg.negative_prompt
 

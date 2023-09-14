@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 import torch.nn.functional as F
+import trimesh
 
 import threestudio
 from threestudio.utils.ops import dot
@@ -24,6 +25,11 @@ class Mesh:
         self.extras: Dict[str, Any] = {}
         for k, v in kwargs.items():
             self.add_extra(k, v)
+
+    def export(self, fn="out.ply"): 
+        mesh = trimesh.base.Trimesh(self.v_pos.detach().cpu().numpy(), self.t_pos_idx.detach().cpu().numpy())
+        # mesh.visual.vertex_colors = self._v_rgb.detach().cpu().numpy()
+        mesh.export(fn)
 
     def add_extra(self, k, v) -> None:
         self.extras[k] = v

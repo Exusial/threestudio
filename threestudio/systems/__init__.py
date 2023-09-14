@@ -11,5 +11,8 @@ from . import (
     sjc,
     textmesh,
     zero123,
+    dreamavatar,
+    dreamavatar_sdf,
+    dreamavatar_control,
     zero123_simple,
 )

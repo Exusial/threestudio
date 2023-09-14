@@ -19,6 +19,7 @@ from diffusers.utils.import_utils import is_xformers_available
 import threestudio
 from threestudio.models.prompt_processors.base import PromptProcessorOutput
 from threestudio.utils.base import BaseModule
+# from threestudio.systems.base import BaseLift3DSystem
 from threestudio.utils.misc import C, cleanup, parse_version
 from threestudio.utils.typing import *
 
@@ -87,11 +88,17 @@ class StableDiffusionVSDGuidance(BaseModule):
         class SubModules:
             pipe: StableDiffusionPipeline
             pipe_lora: StableDiffusionPipeline
-
+        
+        # Hardcode here to utilize local models
         pipe = StableDiffusionPipeline.from_pretrained(
             self.cfg.pretrained_model_name_or_path,
-            **pipe_kwargs,
+            #"/home/penghy/.cache/huggingface/hub/models--stabilityai--stable-diffusion-2-1-base/snapshots/5ede9e4bf3e3fd1cb0ef2f7a3fff13ee514fdf06",
+            **pipe_kwargs
         ).to(self.device)
+        # pipe = StableDiffusionPipeline.from_pretrained(
+        #     self.cfg.pretrained_model_name_or_path,
+        #     **pipe_kwargs,
+        # ).to(self.device)
         if (
             self.cfg.pretrained_model_name_or_path
             == self.cfg.pretrained_model_name_or_path_lora
@@ -100,10 +107,16 @@ class StableDiffusionVSDGuidance(BaseModule):
             pipe_lora = pipe
         else:
             self.single_model = False
+            # Hardcode here to utilize local models
             pipe_lora = StableDiffusionPipeline.from_pretrained(
                 self.cfg.pretrained_model_name_or_path_lora,
-                **pipe_lora_kwargs,
+                #"/home/penghy/.cache/huggingface/hub/models--stabilityai--stable-diffusion-2-1/snapshots/5cae40e6a2745ae2b01ad92ae5043f95f23644d6",
+                **pipe_kwargs
             ).to(self.device)
+            # pipe_lora = StableDiffusionPipeline.from_pretrained(
+            #     self.cfg.pretrained_model_name_or_path_lora,
+            #     **pipe_lora_kwargs,
+            # ).to(self.device)
             del pipe_lora.vae
             cleanup()
             pipe_lora.vae = pipe.vae
@@ -215,6 +228,8 @@ class StableDiffusionVSDGuidance(BaseModule):
         self.grad_clip_val: Optional[float] = None
 
         threestudio.info(f"Loaded Stable Diffusion!")
+        # import ipdb
+        # ipdb.set_trace()
 
     @torch.cuda.amp.autocast(enabled=False)
     def set_min_max_steps(self, min_step_percent=0.02, max_step_percent=0.98):
@@ -337,6 +352,7 @@ class StableDiffusionVSDGuidance(BaseModule):
             camera_distances,
             view_dependent_prompting=self.cfg.view_dependent_prompting,
         )
+
         cross_attention_kwargs = {"scale": 0.0} if self.single_model else None
         generator = torch.Generator(device=self.device).manual_seed(seed)
 
@@ -441,6 +457,25 @@ class StableDiffusionVSDGuidance(BaseModule):
         image = (image * 0.5 + 0.5).clamp(0, 1)
         return image.to(input_dtype)
 
+    def _get_add_time_ids(
+        self, original_size, crops_coords_top_left, target_size, dtype
+    ):
+        add_time_ids = list(original_size + crops_coords_top_left + target_size)
+
+        passed_add_embed_dim = (
+            self.unet.config.addition_time_embed_dim * len(add_time_ids)
+            + self.text_encoder_2_projection_dim
+        )
+        expected_add_embed_dim = self.unet.add_embedding.linear_1.in_features
+
+        if expected_add_embed_dim != passed_add_embed_dim:
+            raise ValueError(
+                f"Model expects an added time embedding vector of length {expected_add_embed_dim}, but a vector of {passed_add_embed_dim} was created. The model has an incorrect config. Please check `unet.config.time_embedding_type` and `text_encoder_2.config.projection_dim`."
+            )
+
+        add_time_ids = torch.tensor([add_time_ids], dtype=dtype)
+        return add_time_ids
+
     @contextmanager
     def disable_unet_class_embedding(self, unet: UNet2DConditionModel):
         class_embedding = unet.class_embedding
@@ -458,7 +493,7 @@ class StableDiffusionVSDGuidance(BaseModule):
         camera_condition: Float[Tensor, "B 4 4"],
     ):
         B = latents.shape[0]
-
+       
         with torch.no_grad():
             # random timestamp
             t = torch.randint(

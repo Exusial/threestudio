@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import threestudio
 from threestudio.models.background.base import BaseBackground
 from threestudio.models.geometry.base import BaseImplicitGeometry
+from threestudio.models.geometry.dlmesh import DlMesh
 from threestudio.models.materials.base import BaseMaterial
 from threestudio.models.renderers.base import Rasterizer, VolumeRenderer
 from threestudio.utils.misc import get_device
@@ -18,7 +19,7 @@ from threestudio.utils.typing import *
 class NVDiffRasterizer(Rasterizer):
     @dataclass
     class Config(VolumeRenderer.Config):
-        context_type: str = "gl"
+        context_type: str = "cuda"
 
     cfg: Config
 
@@ -43,7 +44,6 @@ class NVDiffRasterizer(Rasterizer):
     ) -> Dict[str, Any]:
         batch_size = mvp_mtx.shape[0]
         mesh = self.geometry.isosurface()
-
         v_pos_clip: Float[Tensor, "B Nv 4"] = self.ctx.vertex_transform(
             mesh.v_pos, mvp_mtx
         )
